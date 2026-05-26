@@ -297,7 +297,8 @@ async function loadRoomsCurrent() {
   Object.entries(data).sort((a,b) => a[0].localeCompare(b[0])).forEach(([room, v]) => {
     const t = v.temp !== null ? v.temp.toFixed(1) + ' °C' : '—';
     const h = v.hum  !== null ? v.hum.toFixed(0) + ' %' : '';
-    grid.innerHTML += `<div class="card"><div class="room">${room}</div><div class="temp">${t}</div><div class="hum">${h}</div></div>`;
+    const htg = v.heating === 1 ? ' <span style="color:var(--warm);font-size:.7rem;">● heiz</span>' : '';
+    grid.innerHTML += `<div class="card"><div class="room">${room}${htg}</div><div class="temp">${t}</div><div class="hum">${h}</div></div>`;
   });
 }
 

@@ -101,11 +101,15 @@ async def index(request: Request):
 
 @app.get("/api/rooms/current")
 async def rooms_current():
-    """Current temperature and humidity for all rooms."""
-    temps = _last_by_tag("raumtemperatur", "raum", "temp")
-    hums  = _last_by_tag("raumtemperatur", "raum", "hum")
+    """Current temperature, humidity, and heating status for all rooms."""
+    temps   = _last_by_tag("raumtemperatur", "raum", "temp")
+    hums    = _last_by_tag("raumtemperatur", "raum", "hum")
+    heating = _last_by_tag("raumtemperatur", "raum", "heating")
     all_rooms = sorted(set(temps) | set(hums))
-    return JSONResponse({r: {"temp": temps.get(r), "hum": hums.get(r)} for r in all_rooms})
+    return JSONResponse({
+        r: {"temp": temps.get(r), "hum": hums.get(r), "heating": heating.get(r)}
+        for r in all_rooms
+    })
 
 
 @app.get("/api/rooms/history")
