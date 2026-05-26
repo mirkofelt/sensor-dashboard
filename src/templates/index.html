@@ -36,6 +36,12 @@
   .stream-fortluft  { border-top: 3px solid #a855f7; }
   .stream-aussenluft{ border-top: 3px solid #22d3ee; }
   .stream-zuluft    { border-top: 3px solid #4ade80; }
+  .series-selector { margin-bottom: 1rem; }
+  .series-group { margin-bottom: .6rem; }
+  .series-group-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: .35rem; }
+  .series-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+  .chip { background: var(--border); border: none; color: var(--muted); padding: .25rem .6rem; border-radius: 20px; cursor: pointer; font-size: .75rem; transition: background .15s, color .15s; }
+  .chip.active { color: #fff; }
 </style>
 </head>
 <body>
@@ -67,6 +73,17 @@
   <canvas id="vent-chart"></canvas>
 </div>
 
+<h2>Vergleich</h2>
+<div class="chart-wrap">
+  <div class="range-btns" id="cmp-range">
+    <button data-r="6h">6h</button>
+    <button data-r="24h" class="active">24h</button>
+    <button data-r="7d">7d</button>
+  </div>
+  <div class="series-selector" id="series-selector"></div>
+  <canvas id="cmp-chart"></canvas>
+</div>
+
 <div class="updated" id="updated"></div>
 
 <script>
@@ -81,8 +98,122 @@ const VENT_LABELS = {
   abluft: 'Abluft (Haus→)', fortluft: 'Fortluft (→außen)', aussenluft: 'Außenluft (→Haus)', zuluft: 'Zuluft (→Räume)'
 };
 
-let roomChart = null, ventChart = null;
-let roomRange = '24h', ventRange = '24h';
+let roomChart = null, ventChart = null, cmpChart = null;
+let roomRange = '24h', ventRange = '24h', cmpRange = '24h';
+
+const CMP_COLORS = [
+  '#4f9cf9','#f97316','#4ade80','#f43f5e','#a855f7',
+  '#22d3ee','#facc15','#fb7185','#34d399','#818cf8','#f472b6','#64748b'
+];
+
+const DEFAULT_SERIES = ['lueftung:aussenluft:temp', 'lueftung:abluft:temp'];
+let selectedSeries = new Set(DEFAULT_SERIES);
+let allSeriesMeta = [];
+
+async function loadSeriesMeta() {
+  allSeriesMeta = await fetch('/api/series').then(r => r.json());
+  renderSeriesSelector();
+  loadCompare(cmpRange);
+}
+
+function renderSeriesSelector() {
+  const container = document.getElementById('series-selector');
+  const groups = {};
+  allSeriesMeta.forEach(s => {
+    if (!groups[s.group]) groups[s.group] = [];
+    groups[s.group].push(s);
+  });
+
+  container.innerHTML = Object.entries(groups).map(([grp, items]) => `
+    <div class="series-group">
+      <div class="series-group-label">${grp}</div>
+      <div class="series-chips">
+        ${items.map(s => {
+          const active = selectedSeries.has(s.id) ? 'active' : '';
+          const color = selectedSeries.has(s.id) ? getSeriesColor(s.id) : '';
+          return `<button class="chip ${active}" data-id="${s.id}"
+            style="${color ? 'background:'+color+';border-color:'+color : ''}"
+            >${s.label}</button>`;
+        }).join('')}
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('.chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      if (selectedSeries.has(id)) {
+        selectedSeries.delete(id);
+      } else {
+        selectedSeries.add(id);
+      }
+      renderSeriesSelector();
+      loadCompare(cmpRange);
+    });
+  });
+}
+
+function getSeriesColor(id) {
+  const idx = [...selectedSeries].indexOf(id);
+  return CMP_COLORS[idx % CMP_COLORS.length];
+}
+
+async function loadCompare(range) {
+  if (selectedSeries.size === 0) {
+    if (cmpChart) { cmpChart.destroy(); cmpChart = null; }
+    return;
+  }
+  const seriesParam = [...selectedSeries].join(',');
+  const raw = await fetch(`/api/compare?series=${encodeURIComponent(seriesParam)}&range=${range}`).then(r => r.json());
+
+  const hasTempOnly = raw.every(s => s.unit === '°C');
+  const hasHumOnly  = raw.every(s => s.unit === '%');
+  const hasBoth     = !hasTempOnly && !hasHumOnly;
+
+  const datasets = raw.map((s, i) => {
+    const color = CMP_COLORS[i % CMP_COLORS.length];
+    const meta  = allSeriesMeta.find(m => m.id === s.id) || {};
+    return {
+      label: meta.label || s.id,
+      data: s.data.map(p => ({x: p.t, y: p.v})),
+      borderColor: color,
+      backgroundColor: 'transparent',
+      borderWidth: 2, pointRadius: 0, tension: 0.3,
+      yAxisID: (hasBoth && s.unit === '%') ? 'y1' : 'y',
+    };
+  });
+
+  const scales = {
+    x: { type: 'time', ticks: { color: '#8892a4' }, grid: { color: '#2a2d3a' } },
+    y: {
+      position: 'left',
+      ticks: { color: '#8892a4', callback: v => hasBoth || hasTempOnly ? v + ' °C' : v + ' %' },
+      grid: { color: '#2a2d3a' },
+    },
+  };
+  if (hasBoth) {
+    scales.y.ticks.callback = v => v + ' °C';
+    scales.y1 = {
+      position: 'right',
+      ticks: { color: '#8892a4', callback: v => v + ' %' },
+      grid: { drawOnChartArea: false },
+    };
+  } else if (hasHumOnly) {
+    scales.y.ticks.callback = v => v + ' %';
+  }
+
+  const ctx = document.getElementById('cmp-chart').getContext('2d');
+  if (cmpChart) cmpChart.destroy();
+  cmpChart = new Chart(ctx, {
+    type: 'line',
+    data: {datasets},
+    options: {
+      scales,
+      plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
+      interaction: { mode: 'index', intersect: false },
+    }
+  });
+}
 
 async function loadRoomsCurrent() {
   const data = await fetch('/api/rooms/current').then(r => r.json());
@@ -175,11 +306,13 @@ async function refresh() {
 
 setupRangeBtns('room-range', r => { roomRange = r; loadRoomsHistory(r); });
 setupRangeBtns('vent-range', r => { ventRange = r; loadVentHistory(r); });
+setupRangeBtns('cmp-range',  r => { cmpRange  = r; loadCompare(r); });
 
 refresh();
 loadRoomsHistory(roomRange);
 loadVentHistory(ventRange);
-setInterval(() => { refresh(); loadRoomsHistory(roomRange); loadVentHistory(ventRange); }, 60000);
+loadSeriesMeta();
+setInterval(() => { refresh(); loadRoomsHistory(roomRange); loadVentHistory(ventRange); loadCompare(cmpRange); }, 60000);
 </script>
 </body>
 </html>

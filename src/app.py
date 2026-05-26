@@ -3,7 +3,7 @@ import os
 import urllib.request
 import json
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
@@ -127,3 +127,69 @@ async def ventilation_current():
 async def ventilation_history(range: str = "24h"):
     """Temperature history for all ventilation air streams. range: 6h | 24h | 7d"""
     return JSONResponse(_history_by_tag("lueftung", "luftstrom", "temp", range))
+
+
+_TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom"}
+_VENT_LABELS = {"aussenluft": "Außenluft", "abluft": "Abluft", "fortluft": "Fortluft", "zuluft": "Zuluft"}
+_FIELD_LABELS = {"temp": "Temp", "hum": "Feuchte"}
+_FIELD_UNITS  = {"temp": "°C", "hum": "%"}
+
+
+@app.get("/api/series")
+async def list_series():
+    """Return all available series with id, label, unit, and group."""
+    vent_t = _last_by_tag("lueftung", "luftstrom", "temp")
+    vent_h = _last_by_tag("lueftung", "luftstrom", "hum")
+    room_t = _last_by_tag("raumtemperatur", "raum", "temp")
+    room_h = _last_by_tag("raumtemperatur", "raum", "hum")
+
+    series = []
+    for stream in sorted(set(vent_t) | set(vent_h)):
+        lbl = _VENT_LABELS.get(stream, stream.capitalize())
+        for field in ("temp", "hum"):
+            if (field == "temp" and stream in vent_t) or (field == "hum" and stream in vent_h):
+                series.append({
+                    "id": f"lueftung:{stream}:{field}",
+                    "label": f"{lbl} ({_FIELD_LABELS[field]})",
+                    "unit": _FIELD_UNITS[field],
+                    "group": "Lüftung",
+                })
+    for room in sorted(set(room_t) | set(room_h)):
+        for field in ("temp", "hum"):
+            if (field == "temp" and room in room_t) or (field == "hum" and room in room_h):
+                series.append({
+                    "id": f"raumtemperatur:{room}:{field}",
+                    "label": f"{room} ({_FIELD_LABELS[field]})",
+                    "unit": _FIELD_UNITS[field],
+                    "group": "Räume",
+                })
+    return JSONResponse(series)
+
+
+@app.get("/api/compare")
+async def compare(series: str = Query(default=""), range: str = "24h"):
+    """Return history for a comma-separated list of 'measurement:tag_value:field' series."""
+    if not series:
+        return JSONResponse([])
+
+    result = []
+    for s in series.split(","):
+        s = s.strip()
+        parts = s.split(":")
+        if len(parts) != 3:
+            continue
+        measurement, tag_value, field = parts
+        tag_key = _TAG_KEY.get(measurement)
+        if not tag_key or field not in _FIELD_UNITS:
+            continue
+
+        query = f'''from(bucket: "{INFLUX_BUCKET}")
+  |> range(start: -{range})
+  |> filter(fn: (r) => r._measurement == "{measurement}" and r._field == "{field}" and r.{tag_key} == "{tag_value}")
+  |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+'''
+        rows = _flux_query(query)
+        data = [{"t": r["_time"], "v": v} for r in rows if (v := _safe_float(r.get("_value"))) is not None and r.get("_time")]
+        result.append({"id": s, "unit": _FIELD_UNITS[field], "data": data})
+
+    return JSONResponse(result)
