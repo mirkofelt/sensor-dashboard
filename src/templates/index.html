@@ -82,6 +82,19 @@
   <canvas id="energie-chart"></canvas>
 </div>
 
+<h2>Verbraucher</h2>
+<div class="vent-grid" id="verbraucher-grid"></div>
+
+<h2>Verlauf Verbraucher</h2>
+<div class="chart-wrap">
+  <div class="range-btns" id="verbraucher-range">
+    <button data-r="6h">6h</button>
+    <button data-r="24h" class="active">24h</button>
+    <button data-r="7d">7d</button>
+  </div>
+  <canvas id="verbraucher-chart"></canvas>
+</div>
+
 <h2>Lüftungsanlage</h2>
 <div class="vent-grid" id="vent-grid"></div>
 
@@ -150,8 +163,18 @@ const ENERGIE_LABELS = {
 };
 const ENERGIE_CHART_FIELDS = ['pv_w','verbrauch_w','bezug_w','einspeisung_w','laden_w','entladen_w'];
 
-let roomChart = null, ventChart = null, energieChart = null, cmpChart = null;
-let roomRange = '24h', ventRange = '24h', energieRange = '24h', cmpRange = '24h';
+const VERBRAUCHER_COLORS = {
+  boiler1_w: '#4f9cf9', boiler2_w: '#22d3ee', ir_heizer_w: '#f97316',
+  waschmaschine_w: '#a855f7', lueftungsanlage_w: '#4ade80',
+};
+const VERBRAUCHER_LABELS = {
+  boiler1_w: 'Boiler 1', boiler2_w: 'Boiler 2', ir_heizer_w: 'IR-Heizer',
+  waschmaschine_w: 'Waschmaschine', lueftungsanlage_w: 'Lüftungsanlage',
+};
+const VERBRAUCHER_CHART_FIELDS = ['boiler1_w','boiler2_w','ir_heizer_w','waschmaschine_w','lueftungsanlage_w'];
+
+let roomChart = null, ventChart = null, energieChart = null, verbraucherChart = null, cmpChart = null;
+let roomRange = '24h', ventRange = '24h', energieRange = '24h', verbraucherRange = '24h', cmpRange = '24h';
 
 const CMP_COLORS = [
   '#4f9cf9','#f97316','#4ade80','#f43f5e','#a855f7',
@@ -350,6 +373,52 @@ async function loadEnergieHistory(range) {
   });
 }
 
+async function loadVerbraucherCurrent() {
+  const data = await fetch('/api/verbraucher/current').then(r => r.json());
+  const grid = document.getElementById('verbraucher-grid');
+  const items = [
+    {k:'boiler1_w',       label:'Boiler 1'},
+    {k:'boiler2_w',       label:'Boiler 2'},
+    {k:'ir_heizer_w',     label:'IR-Heizer'},
+    {k:'waschmaschine_w', label:'Waschmaschine'},
+    {k:'lueftungsanlage_w',label:'Lüftungsanlage'},
+    {k:'ir_heizer_aktiv', label:'IR an/aus', special: 'aktiv'},
+  ];
+  grid.innerHTML = items.map(({k, label, special}) => {
+    const v = data[k];
+    let val;
+    if (special === 'aktiv') val = (v !== null && v !== undefined) ? (v ? 'AN' : 'AUS') : '—';
+    else val = _watt(v);
+    const active = (v !== null && v !== undefined && v > 0) ? 'active' : '';
+    return `<div class="vent-card ${active}"><div class="label">${label}</div><div class="val">${val}</div></div>`;
+  }).join('');
+}
+
+async function loadVerbraucherHistory(range) {
+  const data = await fetch(`/api/verbraucher/history?range=${range}`).then(r => r.json());
+  const ctx = document.getElementById('verbraucher-chart').getContext('2d');
+  const datasets = VERBRAUCHER_CHART_FIELDS.filter(f => data[f]?.length).map(f => ({
+    label: VERBRAUCHER_LABELS[f],
+    data: data[f].map(p => ({x: p.t, y: p.v})),
+    borderColor: VERBRAUCHER_COLORS[f],
+    backgroundColor: 'transparent',
+    borderWidth: 2, pointRadius: 0, tension: 0.3,
+  }));
+  if (verbraucherChart) verbraucherChart.destroy();
+  verbraucherChart = new Chart(ctx, {
+    type: 'line',
+    data: {datasets},
+    options: {
+      scales: {
+        x: timeXAxis(range),
+        y: { ticks: { color: '#8892a4', callback: v => v >= 1000 ? (v/1000).toFixed(1)+' kW' : v+' W' }, grid: { color: '#2a2d3a' } }
+      },
+      plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
+      interaction: { mode: 'index', intersect: false },
+    }
+  });
+}
+
 async function loadVentCurrent() {
   const data = await fetch('/api/ventilation/current').then(r => r.json());
   const grid = document.getElementById('vent-grid');
@@ -414,25 +483,28 @@ function exportChart(fmt) {
   link.click();
 }
 
-setupRangeBtns('room-range',    r => { roomRange    = r; loadRoomsHistory(r); });
-setupRangeBtns('vent-range',    r => { ventRange    = r; loadVentHistory(r); });
-setupRangeBtns('energie-range', r => { energieRange = r; loadEnergieHistory(r); });
-setupRangeBtns('cmp-range',     r => { cmpRange     = r; loadCompare(r); });
+setupRangeBtns('room-range',         r => { roomRange         = r; loadRoomsHistory(r); });
+setupRangeBtns('vent-range',         r => { ventRange         = r; loadVentHistory(r); });
+setupRangeBtns('energie-range',      r => { energieRange      = r; loadEnergieHistory(r); });
+setupRangeBtns('verbraucher-range',  r => { verbraucherRange  = r; loadVerbraucherHistory(r); });
+setupRangeBtns('cmp-range',          r => { cmpRange          = r; loadCompare(r); });
 
 async function refresh() {
-  await Promise.all([loadRoomsCurrent(), loadVentCurrent(), loadEnergieCurrent()]);
+  await Promise.all([loadRoomsCurrent(), loadVentCurrent(), loadEnergieCurrent(), loadVerbraucherCurrent()]);
   document.getElementById('updated').textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
 }
 
 refresh();
 loadRoomsHistory(roomRange);
 loadEnergieHistory(energieRange);
+loadVerbraucherHistory(verbraucherRange);
 loadVentHistory(ventRange);
 loadSeriesMeta();
 setInterval(() => {
   refresh();
   loadRoomsHistory(roomRange);
   loadEnergieHistory(energieRange);
+  loadVerbraucherHistory(verbraucherRange);
   loadVentHistory(ventRange);
   loadCompare(cmpRange);
 }, 60000);

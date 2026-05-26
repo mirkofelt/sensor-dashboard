@@ -129,7 +129,7 @@ async def ventilation_history(range: str = "24h"):
     return JSONResponse(_history_by_tag("lueftung", "luftstrom", "temp", range))
 
 
-_TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom", "energie": None}
+_TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom", "energie": None, "verbraucher": None}
 _VENT_LABELS = {"aussenluft": "Außenluft", "abluft": "Abluft", "fortluft": "Fortluft", "zuluft": "Zuluft"}
 _FIELD_LABELS = {"temp": "Temp", "hum": "Feuchte"}
 _FIELD_UNITS  = {"temp": "°C", "hum": "%"}
@@ -166,6 +166,9 @@ from(bucket: "{INFLUX_BUCKET}")
 _ENERGIE_FIELDS = ["pv_w", "verbrauch_w", "bezug_w", "einspeisung_w", "laden_w", "entladen_w",
                    "autonomie_pct", "eigenverbrauch_pct"]
 
+_VERBRAUCHER_FIELDS = ["boiler1_w", "boiler2_w", "ir_heizer_w", "waschmaschine_w",
+                       "lueftungsanlage_w", "ir_heizer_aktiv"]
+
 
 @app.get("/api/energie/current")
 async def energie_current():
@@ -177,6 +180,18 @@ async def energie_current():
 async def energie_history(range: str = "24h"):
     """Energy history for all fields. range: 6h | 24h | 7d"""
     return JSONResponse({f: _history_field("energie", f, range) for f in _ENERGIE_FIELDS})
+
+
+@app.get("/api/verbraucher/current")
+async def verbraucher_current():
+    """Current power consumption for individual consumers (Loxone meters)."""
+    return JSONResponse({f: _last_field("verbraucher", f) for f in _VERBRAUCHER_FIELDS})
+
+
+@app.get("/api/verbraucher/history")
+async def verbraucher_history(range: str = "24h"):
+    """Power history for individual consumers. range: 6h | 24h | 7d"""
+    return JSONResponse({f: _history_field("verbraucher", f, range) for f in _VERBRAUCHER_FIELDS})
 
 
 @app.get("/api/series")
@@ -196,10 +211,21 @@ async def list_series():
         "pv_w": "W", "verbrauch_w": "W", "bezug_w": "W", "einspeisung_w": "W",
         "laden_w": "W", "entladen_w": "W", "autonomie_pct": "%", "eigenverbrauch_pct": "%",
     }
+    _VERBRAUCHER_LABELS = {
+        "boiler1_w": "Boiler 1", "boiler2_w": "Boiler 2", "ir_heizer_w": "IR-Heizer",
+        "waschmaschine_w": "Waschmaschine", "lueftungsanlage_w": "Lüftungsanlage",
+        "ir_heizer_aktiv": "IR-Heizer (an/aus)",
+    }
+    _VERBRAUCHER_UNITS = {
+        "boiler1_w": "W", "boiler2_w": "W", "ir_heizer_w": "W",
+        "waschmaschine_w": "W", "lueftungsanlage_w": "W", "ir_heizer_aktiv": "",
+    }
 
     series = []
     for field, lbl in _ENERGIE_LABELS.items():
         series.append({"id": f"energie::{field}", "label": lbl, "unit": _ENERGIE_UNITS[field], "group": "Energie"})
+    for field, lbl in _VERBRAUCHER_LABELS.items():
+        series.append({"id": f"verbraucher::{field}", "label": lbl, "unit": _VERBRAUCHER_UNITS[field], "group": "Verbraucher"})
     for stream in sorted(set(vent_t) | set(vent_h)):
         lbl = _VENT_LABELS.get(stream, stream.capitalize())
         for field in ("temp", "hum"):
