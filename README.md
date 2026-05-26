@@ -20,7 +20,7 @@ Expected `luftstrom` values: `abluft`, `fortluft`, `aussenluft`, `zuluft`
 1. In Unraid, open **Docker → Add Container**
 2. Paste the template URL at the bottom of the page:
    ```
-   https://raw.githubusercontent.com/mirkofelt/sensor-dashboard/main/sensor-dashboard.xml
+   https://raw.githubusercontent.com/mirkofelt/sensor-dashboard/main/unraid-template.xml
    ```
 3. Fill in your InfluxDB connection details
 4. Click **Apply**
