@@ -129,10 +129,54 @@ async def ventilation_history(range: str = "24h"):
     return JSONResponse(_history_by_tag("lueftung", "luftstrom", "temp", range))
 
 
-_TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom"}
+_TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom", "energie": None}
 _VENT_LABELS = {"aussenluft": "Außenluft", "abluft": "Abluft", "fortluft": "Fortluft", "zuluft": "Zuluft"}
 _FIELD_LABELS = {"temp": "Temp", "hum": "Feuchte"}
 _FIELD_UNITS  = {"temp": "°C", "hum": "%"}
+
+
+def _last_field(measurement: str, field: str) -> float | None:
+    """Return the last value of a field from a tag-less measurement."""
+    query = f'''
+from(bucket: "{INFLUX_BUCKET}")
+  |> range(start: -2h)
+  |> filter(fn: (r) => r._measurement == "{measurement}" and r._field == "{field}")
+  |> last()
+'''
+    rows = _flux_query(query)
+    for row in rows:
+        v = _safe_float(row.get("_value"))
+        if v is not None:
+            return v
+    return None
+
+
+def _history_field(measurement: str, field: str, time_range: str) -> list[dict]:
+    """Return [{t, v}, ...] averaged over 15-minute windows for a tag-less measurement."""
+    query = f'''
+from(bucket: "{INFLUX_BUCKET}")
+  |> range(start: -{time_range})
+  |> filter(fn: (r) => r._measurement == "{measurement}" and r._field == "{field}")
+  |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+'''
+    rows = _flux_query(query)
+    return [{"t": r["_time"], "v": v} for r in rows if (v := _safe_float(r.get("_value"))) is not None and r.get("_time")]
+
+
+_ENERGIE_FIELDS = ["pv_w", "verbrauch_w", "bezug_w", "einspeisung_w", "laden_w", "entladen_w",
+                   "autonomie_pct", "eigenverbrauch_pct"]
+
+
+@app.get("/api/energie/current")
+async def energie_current():
+    """Current energy values from the PV/inverter system."""
+    return JSONResponse({f: _last_field("energie", f) for f in _ENERGIE_FIELDS})
+
+
+@app.get("/api/energie/history")
+async def energie_history(range: str = "24h"):
+    """Energy history for all fields. range: 6h | 24h | 7d"""
+    return JSONResponse({f: _history_field("energie", f, range) for f in _ENERGIE_FIELDS})
 
 
 @app.get("/api/series")
@@ -143,7 +187,19 @@ async def list_series():
     room_t = _last_by_tag("raumtemperatur", "raum", "temp")
     room_h = _last_by_tag("raumtemperatur", "raum", "hum")
 
+    _ENERGIE_LABELS = {
+        "pv_w": "PV Erzeugung", "verbrauch_w": "Verbrauch", "bezug_w": "Netzbezug",
+        "einspeisung_w": "Einspeisung", "laden_w": "Batterie laden", "entladen_w": "Batterie entladen",
+        "autonomie_pct": "Autarkie", "eigenverbrauch_pct": "Eigenverbrauch",
+    }
+    _ENERGIE_UNITS = {
+        "pv_w": "W", "verbrauch_w": "W", "bezug_w": "W", "einspeisung_w": "W",
+        "laden_w": "W", "entladen_w": "W", "autonomie_pct": "%", "eigenverbrauch_pct": "%",
+    }
+
     series = []
+    for field, lbl in _ENERGIE_LABELS.items():
+        series.append({"id": f"energie::{field}", "label": lbl, "unit": _ENERGIE_UNITS[field], "group": "Energie"})
     for stream in sorted(set(vent_t) | set(vent_h)):
         lbl = _VENT_LABELS.get(stream, stream.capitalize())
         for field in ("temp", "hum"):
@@ -180,16 +236,24 @@ async def compare(series: str = Query(default=""), range: str = "24h"):
             continue
         measurement, tag_value, field = parts
         tag_key = _TAG_KEY.get(measurement)
-        if not tag_key or field not in _FIELD_UNITS:
+        if measurement not in _TAG_KEY:
             continue
 
-        query = f'''from(bucket: "{INFLUX_BUCKET}")
+        if tag_key:
+            query = f'''from(bucket: "{INFLUX_BUCKET}")
   |> range(start: -{range})
   |> filter(fn: (r) => r._measurement == "{measurement}" and r._field == "{field}" and r.{tag_key} == "{tag_value}")
   |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
 '''
+        else:
+            query = f'''from(bucket: "{INFLUX_BUCKET}")
+  |> range(start: -{range})
+  |> filter(fn: (r) => r._measurement == "{measurement}" and r._field == "{field}")
+  |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+'''
         rows = _flux_query(query)
         data = [{"t": r["_time"], "v": v} for r in rows if (v := _safe_float(r.get("_value"))) is not None and r.get("_time")]
-        result.append({"id": s, "unit": _FIELD_UNITS[field], "data": data})
+        unit = _FIELD_UNITS.get(field, "W")
+        result.append({"id": s, "unit": unit, "data": data})
 
     return JSONResponse(result)

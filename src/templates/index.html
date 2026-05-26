@@ -32,6 +32,12 @@
   .vent-card .sub { font-size: .8rem; color: var(--muted); margin-top: .2rem; }
   .updated { font-size: .7rem; color: var(--muted); margin-top: .5rem; }
   canvas { max-height: 260px; }
+  .e-pv      { border-top: 3px solid #facc15; }
+  .e-last    { border-top: 3px solid #f43f5e; }
+  .e-bezug   { border-top: 3px solid #f97316; }
+  .e-einsp   { border-top: 3px solid #4ade80; }
+  .e-laden   { border-top: 3px solid #4f9cf9; }
+  .e-entladen{ border-top: 3px solid #a855f7; }
   .stream-abluft    { border-top: 3px solid #f97316; }
   .stream-fortluft  { border-top: 3px solid #a855f7; }
   .stream-aussenluft{ border-top: 3px solid #22d3ee; }
@@ -61,6 +67,19 @@
     <button data-r="7d">7d</button>
   </div>
   <canvas id="room-chart"></canvas>
+</div>
+
+<h2>Energie</h2>
+<div class="vent-grid" id="energie-grid"></div>
+
+<h2>Verlauf Energie</h2>
+<div class="chart-wrap">
+  <div class="range-btns" id="energie-range">
+    <button data-r="6h">6h</button>
+    <button data-r="24h" class="active">24h</button>
+    <button data-r="7d">7d</button>
+  </div>
+  <canvas id="energie-chart"></canvas>
 </div>
 
 <h2>Lüftungsanlage</h2>
@@ -121,9 +140,18 @@ const VENT_COLORS = {
 const VENT_LABELS = {
   abluft: 'Abluft (Haus→)', fortluft: 'Fortluft (→außen)', aussenluft: 'Außenluft (→Haus)', zuluft: 'Zuluft (→Räume)'
 };
+const ENERGIE_COLORS = {
+  pv_w: '#facc15', verbrauch_w: '#f43f5e', bezug_w: '#f97316',
+  einspeisung_w: '#4ade80', laden_w: '#4f9cf9', entladen_w: '#a855f7',
+};
+const ENERGIE_LABELS = {
+  pv_w: 'PV Erzeugung', verbrauch_w: 'Verbrauch', bezug_w: 'Netzbezug',
+  einspeisung_w: 'Einspeisung', laden_w: 'Batterie laden', entladen_w: 'Batterie entladen',
+};
+const ENERGIE_CHART_FIELDS = ['pv_w','verbrauch_w','bezug_w','einspeisung_w','laden_w','entladen_w'];
 
-let roomChart = null, ventChart = null, cmpChart = null;
-let roomRange = '24h', ventRange = '24h', cmpRange = '24h';
+let roomChart = null, ventChart = null, energieChart = null, cmpChart = null;
+let roomRange = '24h', ventRange = '24h', energieRange = '24h', cmpRange = '24h';
 
 const CMP_COLORS = [
   '#4f9cf9','#f97316','#4ade80','#f43f5e','#a855f7',
@@ -276,6 +304,52 @@ async function loadRoomsHistory(range) {
   });
 }
 
+function _watt(v) { return v !== null && v !== undefined ? (v >= 1000 ? (v/1000).toFixed(1)+' kW' : Math.round(v)+' W') : '—'; }
+function _pct(v)  { return v !== null && v !== undefined ? v.toFixed(0)+' %' : '—'; }
+
+async function loadEnergieCurrent() {
+  const data = await fetch('/api/energie/current').then(r => r.json());
+  const grid = document.getElementById('energie-grid');
+  const items = [
+    {k:'pv_w',        label:'PV Erzeugung',    fmt:_watt, cls:'e-pv'},
+    {k:'verbrauch_w', label:'Verbrauch',        fmt:_watt, cls:'e-last'},
+    {k:'bezug_w',     label:'Netzbezug',        fmt:_watt, cls:'e-bezug'},
+    {k:'einspeisung_w',label:'Einspeisung',     fmt:_watt, cls:'e-einsp'},
+    {k:'laden_w',     label:'Batterie laden',   fmt:_watt, cls:'e-laden'},
+    {k:'entladen_w',  label:'Batterie entladen',fmt:_watt, cls:'e-entladen'},
+    {k:'autonomie_pct',label:'Autarkie',        fmt:_pct,  cls:''},
+    {k:'eigenverbrauch_pct',label:'Eigenverbrauch',fmt:_pct,cls:''},
+  ];
+  grid.innerHTML = items.map(({k, label, fmt, cls}) =>
+    `<div class="vent-card ${cls}"><div class="label">${label}</div><div class="val">${fmt(data[k])}</div></div>`
+  ).join('');
+}
+
+async function loadEnergieHistory(range) {
+  const data = await fetch(`/api/energie/history?range=${range}`).then(r => r.json());
+  const ctx = document.getElementById('energie-chart').getContext('2d');
+  const datasets = ENERGIE_CHART_FIELDS.filter(f => data[f]?.length).map(f => ({
+    label: ENERGIE_LABELS[f],
+    data: data[f].map(p => ({x: p.t, y: p.v})),
+    borderColor: ENERGIE_COLORS[f],
+    backgroundColor: 'transparent',
+    borderWidth: 2, pointRadius: 0, tension: 0.3,
+  }));
+  if (energieChart) energieChart.destroy();
+  energieChart = new Chart(ctx, {
+    type: 'line',
+    data: {datasets},
+    options: {
+      scales: {
+        x: timeXAxis(range),
+        y: { ticks: { color: '#8892a4', callback: v => v >= 1000 ? (v/1000).toFixed(1)+' kW' : v+' W' }, grid: { color: '#2a2d3a' } }
+      },
+      plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
+      interaction: { mode: 'index', intersect: false },
+    }
+  });
+}
+
 async function loadVentCurrent() {
   const data = await fetch('/api/ventilation/current').then(r => r.json());
   const grid = document.getElementById('vent-grid');
@@ -323,11 +397,6 @@ function setupRangeBtns(containerId, onSelect) {
   });
 }
 
-async function refresh() {
-  await Promise.all([loadRoomsCurrent(), loadVentCurrent()]);
-  document.getElementById('updated').textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
-}
-
 function exportChart(fmt) {
   const canvas = document.getElementById('cmp-chart');
   const link = document.createElement('a');
@@ -345,15 +414,28 @@ function exportChart(fmt) {
   link.click();
 }
 
-setupRangeBtns('room-range', r => { roomRange = r; loadRoomsHistory(r); });
-setupRangeBtns('vent-range', r => { ventRange = r; loadVentHistory(r); });
-setupRangeBtns('cmp-range',  r => { cmpRange  = r; loadCompare(r); });
+setupRangeBtns('room-range',    r => { roomRange    = r; loadRoomsHistory(r); });
+setupRangeBtns('vent-range',    r => { ventRange    = r; loadVentHistory(r); });
+setupRangeBtns('energie-range', r => { energieRange = r; loadEnergieHistory(r); });
+setupRangeBtns('cmp-range',     r => { cmpRange     = r; loadCompare(r); });
+
+async function refresh() {
+  await Promise.all([loadRoomsCurrent(), loadVentCurrent(), loadEnergieCurrent()]);
+  document.getElementById('updated').textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
+}
 
 refresh();
 loadRoomsHistory(roomRange);
+loadEnergieHistory(energieRange);
 loadVentHistory(ventRange);
 loadSeriesMeta();
-setInterval(() => { refresh(); loadRoomsHistory(roomRange); loadVentHistory(ventRange); loadCompare(cmpRange); }, 60000);
+setInterval(() => {
+  refresh();
+  loadRoomsHistory(roomRange);
+  loadEnergieHistory(energieRange);
+  loadVentHistory(ventRange);
+  loadCompare(cmpRange);
+}, 60000);
 </script>
 </body>
 </html>
