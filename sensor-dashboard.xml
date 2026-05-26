@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>sensor-dashboard</Name>
+  <Repository>ghcr.io/mirkofelt/sensor-dashboard:latest</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/mirkofelt/sensor-dashboard</Support>
+  <Project>https://github.com/mirkofelt/sensor-dashboard</Project>
+  <Overview>Home sensor dashboard — room temperatures and ventilation data from InfluxDB. Dark theme, live charts with 6h/24h/7d range, auto-refresh every 60s.</Overview>
+  <Category>Tools: HomeAutomation:</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/mirkofelt/sensor-dashboard/main/sensor-dashboard.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/mirkofelt/sensor-dashboard/main/icon.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <Description>Home sensor dashboard reading room temperatures and ventilation data from InfluxDB v2.</Description>
+  <Networking>
+    <Mode>bridge</Mode>
+    <Publish>
+      <Port>
+        <HostPort>8000</HostPort>
+        <ContainerPort>8000</ContainerPort>
+        <Protocol>tcp</Protocol>
+      </Port>
+    </Publish>
+  </Networking>
+  <Data/>
+  <Environment/>
+  <Labels/>
+  <Config Name="WebUI Port" Target="8000" Default="8000" Mode="tcp"
+    Description="Port to access the dashboard in your browser."
+    Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+  <Config Name="InfluxDB Host" Target="INFLUX_HOST" Default=""
+    Description="IP address or hostname of your InfluxDB v2 instance (e.g. 192.168.1.100)."
+    Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="InfluxDB Port" Target="INFLUX_PORT" Default="8086"
+    Description="InfluxDB port. Default is 8086."
+    Type="Variable" Display="always" Required="false" Mask="false">8086</Config>
+  <Config Name="InfluxDB Token" Target="INFLUX_TOKEN" Default=""
+    Description="InfluxDB v2 API token with read access to your bucket."
+    Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="InfluxDB Org" Target="INFLUX_ORG" Default=""
+    Description="InfluxDB organization ID or name."
+    Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="InfluxDB Bucket" Target="INFLUX_BUCKET" Default="sensors"
+    Description="InfluxDB bucket name containing your sensor data."
+    Type="Variable" Display="always" Required="false" Mask="false">sensors</Config>
+</Container>
