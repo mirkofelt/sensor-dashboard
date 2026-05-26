@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sensordaten</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+    --text: #e2e8f0; --muted: #8892a4; --accent: #4f9cf9;
+    --warm: #f97316; --cool: #22d3ee; --green: #4ade80;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; padding: 1.5rem; }
+  h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 1.5rem; color: var(--accent); }
+  h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: .75rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: .75rem; margin-bottom: 1.5rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: .9rem 1rem; }
+  .card .room { font-size: .75rem; color: var(--muted); margin-bottom: .35rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .temp { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+  .card .hum  { font-size: .8rem; color: var(--muted); margin-top: .25rem; }
+  .chart-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem; }
+  .range-btns { display: flex; gap: .5rem; margin-bottom: 1rem; }
+  .range-btns button { background: var(--border); border: none; color: var(--muted); padding: .3rem .75rem; border-radius: 6px; cursor: pointer; font-size: .8rem; }
+  .range-btns button.active { background: var(--accent); color: #fff; }
+  .vent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: .75rem; margin-bottom: 1.5rem; }
+  .vent-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: .9rem 1rem; }
+  .vent-card .label { font-size: .75rem; color: var(--muted); margin-bottom: .35rem; }
+  .vent-card .val { font-size: 1.4rem; font-weight: 700; }
+  .vent-card .sub { font-size: .8rem; color: var(--muted); margin-top: .2rem; }
+  .updated { font-size: .7rem; color: var(--muted); margin-top: .5rem; }
+  canvas { max-height: 260px; }
+  .stream-abluft    { border-top: 3px solid #f97316; }
+  .stream-fortluft  { border-top: 3px solid #a855f7; }
+  .stream-aussenluft{ border-top: 3px solid #22d3ee; }
+  .stream-zuluft    { border-top: 3px solid #4ade80; }
+</style>
+</head>
+<body>
+<h1>🏠 Sensordaten</h1>
+
+<h2>Aktuelle Raumtemperaturen</h2>
+<div class="grid" id="rooms-grid"></div>
+
+<h2>Verlauf Raumtemperaturen</h2>
+<div class="chart-wrap">
+  <div class="range-btns" id="room-range">
+    <button data-r="6h">6h</button>
+    <button data-r="24h" class="active">24h</button>
+    <button data-r="7d">7d</button>
+  </div>
+  <canvas id="room-chart"></canvas>
+</div>
+
+<h2>Lüftungsanlage</h2>
+<div class="vent-grid" id="vent-grid"></div>
+
+<h2>Verlauf Lüftung</h2>
+<div class="chart-wrap">
+  <div class="range-btns" id="vent-range">
+    <button data-r="6h">6h</button>
+    <button data-r="24h" class="active">24h</button>
+    <button data-r="7d">7d</button>
+  </div>
+  <canvas id="vent-chart"></canvas>
+</div>
+
+<div class="updated" id="updated"></div>
+
+<script>
+const ROOM_COLORS = [
+  '#4f9cf9','#f97316','#4ade80','#f43f5e','#a855f7',
+  '#22d3ee','#facc15','#fb7185','#34d399','#818cf8','#f472b6','#64748b'
+];
+const VENT_COLORS = {
+  abluft: '#f97316', fortluft: '#a855f7', aussenluft: '#22d3ee', zuluft: '#4ade80'
+};
+const VENT_LABELS = {
+  abluft: 'Abluft (Haus→)', fortluft: 'Fortluft (→außen)', aussenluft: 'Außenluft (→Haus)', zuluft: 'Zuluft (→Räume)'
+};
+
+let roomChart = null, ventChart = null;
+let roomRange = '24h', ventRange = '24h';
+
+async function loadRoomsCurrent() {
+  const data = await fetch('/api/rooms/current').then(r => r.json());
+  const grid = document.getElementById('rooms-grid');
+  grid.innerHTML = '';
+  Object.entries(data).sort((a,b) => a[0].localeCompare(b[0])).forEach(([room, v]) => {
+    const t = v.temp !== null ? v.temp.toFixed(1) + ' °C' : '—';
+    const h = v.hum  !== null ? v.hum.toFixed(0) + ' %' : '';
+    grid.innerHTML += `<div class="card"><div class="room">${room}</div><div class="temp">${t}</div><div class="hum">${h}</div></div>`;
+  });
+}
+
+async function loadRoomsHistory(range) {
+  const data = await fetch(`/api/rooms/history?range=${range}`).then(r => r.json());
+  const ctx = document.getElementById('room-chart').getContext('2d');
+  const entries = Object.entries(data);
+  const datasets = entries.map(([room, pts], i) => ({
+    label: room,
+    data: pts.map(p => ({x: p.t, y: p.v})),
+    borderColor: ROOM_COLORS[i % ROOM_COLORS.length],
+    backgroundColor: 'transparent',
+    borderWidth: 1.5, pointRadius: 0, tension: 0.3,
+  }));
+  if (roomChart) roomChart.destroy();
+  roomChart = new Chart(ctx, {
+    type: 'line',
+    data: {datasets},
+    options: {
+      scales: {
+        x: { type: 'time', ticks: { color: '#8892a4' }, grid: { color: '#2a2d3a' } },
+        y: { ticks: { color: '#8892a4', callback: v => v + ' °C' }, grid: { color: '#2a2d3a' } }
+      },
+      plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
+      interaction: { mode: 'index', intersect: false },
+    }
+  });
+}
+
+async function loadVentCurrent() {
+  const data = await fetch('/api/ventilation/current').then(r => r.json());
+  const grid = document.getElementById('vent-grid');
+  grid.innerHTML = '';
+  ['aussenluft','zuluft','abluft','fortluft'].forEach(stream => {
+    const v = data[stream] || {};
+    const t = v.temp !== null && v.temp !== undefined ? v.temp.toFixed(1) + ' °C' : '—';
+    const h = v.hum  !== null && v.hum !== undefined  ? v.hum.toFixed(0) + ' %' : '';
+    grid.innerHTML += `<div class="vent-card stream-${stream}"><div class="label">${VENT_LABELS[stream] || stream}</div><div class="val">${t}</div><div class="sub">${h}</div></div>`;
+  });
+}
+
+async function loadVentHistory(range) {
+  const data = await fetch(`/api/ventilation/history?range=${range}`).then(r => r.json());
+  const ctx = document.getElementById('vent-chart').getContext('2d');
+  const datasets = Object.entries(data).map(([stream, pts]) => ({
+    label: VENT_LABELS[stream] || stream,
+    data: pts.map(p => ({x: p.t, y: p.v})),
+    borderColor: VENT_COLORS[stream] || '#aaa',
+    backgroundColor: 'transparent',
+    borderWidth: 2, pointRadius: 0, tension: 0.3,
+  }));
+  if (ventChart) ventChart.destroy();
+  ventChart = new Chart(ctx, {
+    type: 'line',
+    data: {datasets},
+    options: {
+      scales: {
+        x: { type: 'time', ticks: { color: '#8892a4' }, grid: { color: '#2a2d3a' } },
+        y: { ticks: { color: '#8892a4', callback: v => v + ' °C' }, grid: { color: '#2a2d3a' } }
+      },
+      plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
+      interaction: { mode: 'index', intersect: false },
+    }
+  });
+}
+
+function setupRangeBtns(containerId, onSelect) {
+  document.getElementById(containerId).querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById(containerId).querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      onSelect(btn.dataset.r);
+    });
+  });
+}
+
+async function refresh() {
+  await Promise.all([loadRoomsCurrent(), loadVentCurrent()]);
+  document.getElementById('updated').textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
+}
+
+setupRangeBtns('room-range', r => { roomRange = r; loadRoomsHistory(r); });
+setupRangeBtns('vent-range', r => { ventRange = r; loadVentHistory(r); });
+
+refresh();
+loadRoomsHistory(roomRange);
+loadVentHistory(ventRange);
+setInterval(() => { refresh(); loadRoomsHistory(roomRange); loadVentHistory(ventRange); }, 60000);
+</script>
+</body>
+</html>
