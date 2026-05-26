@@ -167,7 +167,8 @@ _ENERGIE_FIELDS = ["pv_w", "verbrauch_w", "bezug_w", "einspeisung_w", "laden_w",
                    "autonomie_pct", "eigenverbrauch_pct"]
 
 _VERBRAUCHER_FIELDS = ["boiler1_w", "boiler2_w", "ir_heizer_w", "waschmaschine_w",
-                       "lueftungsanlage_w", "ir_heizer_aktiv"]
+                       "lueftungsanlage_w", "ir_heizer_aktiv",
+                       "bad_eg_ir_aktiv", "bad_og_ir_aktiv"]
 
 
 @app.get("/api/energie/current")
@@ -215,10 +216,12 @@ async def list_series():
         "boiler1_w": "Boiler 1", "boiler2_w": "Boiler 2", "ir_heizer_w": "IR-Heizer",
         "waschmaschine_w": "Waschmaschine", "lueftungsanlage_w": "Lüftungsanlage",
         "ir_heizer_aktiv": "IR-Heizer (an/aus)",
+        "bad_eg_ir_aktiv": "IR Bad EG (an/aus)", "bad_og_ir_aktiv": "IR Bad OG (an/aus)",
     }
     _VERBRAUCHER_UNITS = {
         "boiler1_w": "W", "boiler2_w": "W", "ir_heizer_w": "W",
-        "waschmaschine_w": "W", "lueftungsanlage_w": "W", "ir_heizer_aktiv": "",
+        "waschmaschine_w": "W", "lueftungsanlage_w": "W",
+        "ir_heizer_aktiv": "", "bad_eg_ir_aktiv": "", "bad_og_ir_aktiv": "",
     }
 
     series = []

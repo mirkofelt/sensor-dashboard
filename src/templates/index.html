@@ -377,12 +377,14 @@ async function loadVerbraucherCurrent() {
   const data = await fetch('/api/verbraucher/current').then(r => r.json());
   const grid = document.getElementById('verbraucher-grid');
   const items = [
-    {k:'boiler1_w',       label:'Boiler 1'},
-    {k:'boiler2_w',       label:'Boiler 2'},
-    {k:'ir_heizer_w',     label:'IR-Heizer'},
-    {k:'waschmaschine_w', label:'Waschmaschine'},
+    {k:'boiler1_w',        label:'Boiler 1'},
+    {k:'boiler2_w',        label:'Boiler 2'},
+    {k:'ir_heizer_w',      label:'IR-Heizer'},
+    {k:'waschmaschine_w',  label:'Waschmaschine'},
     {k:'lueftungsanlage_w',label:'Lüftungsanlage'},
-    {k:'ir_heizer_aktiv', label:'IR an/aus', special: 'aktiv'},
+    {k:'ir_heizer_aktiv',  label:'IR WZ an/aus',  special: 'aktiv'},
+    {k:'bad_eg_ir_aktiv',  label:'IR Bad EG',      special: 'aktiv'},
+    {k:'bad_og_ir_aktiv',  label:'IR Bad OG',      special: 'aktiv'},
   ];
   grid.innerHTML = items.map(({k, label, special}) => {
     const v = data[k];
