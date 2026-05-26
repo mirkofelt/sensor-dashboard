@@ -1,4 +1,4 @@
-"""Sensor dashboard — serves room temps and ventilation data from InfluxDB."""
+"""Sensor dashboard — serves room temperatures and ventilation data from InfluxDB v2."""
 import os
 import urllib.request
 import json
@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
-app = FastAPI()
+app = FastAPI(title="Sensor Dashboard")
 templates = Jinja2Templates(directory="templates")
 
 INFLUX_HOST   = os.environ["INFLUX_HOST"]
@@ -17,6 +17,7 @@ INFLUX_BUCKET = os.environ.get("INFLUX_BUCKET", "sensors")
 
 
 def _flux_query(query: str) -> list[dict]:
+    """Send a Flux query to InfluxDB and return parsed CSV rows as dicts."""
     url = f"http://{INFLUX_HOST}:{INFLUX_PORT}/api/v2/query?org={INFLUX_ORG}"
     body = json.dumps({"query": query, "type": "flux"}).encode()
     req = urllib.request.Request(url, data=body, method="POST")
@@ -29,18 +30,24 @@ def _flux_query(query: str) -> list[dict]:
     rows = []
     headers = None
     for line in raw.splitlines():
+        # InfluxDB annotated CSV: lines starting with # are type annotations, not data
         if not line or line.startswith("#"):
             continue
         parts = line.split(",")
         if headers is None:
-            headers = parts
+            headers = parts  # first non-annotation line is the header row
             continue
         rows.append(dict(zip(headers, parts)))
     return rows
 
 
 def _last_by_tag(measurement: str, tag_key: str, field: str) -> dict[str, float | None]:
-    """Return {tag_value: last_float_value} for a given measurement/tag/field."""
+    """Return {tag_value: last_float} for one field in a measurement.
+
+    We query temp and hum in separate calls rather than using Flux pivot()
+    because pivot reshapes the CSV in a way that breaks the simple header→value
+    parsing above (column names become dynamic and clash across series).
+    """
     query = f'''
 from(bucket: "{INFLUX_BUCKET}")
   |> range(start: -2h)
@@ -57,10 +64,11 @@ from(bucket: "{INFLUX_BUCKET}")
     return result
 
 
-def _history_by_tag(measurement: str, tag_key: str, field: str, range: str) -> dict[str, list]:
+def _history_by_tag(measurement: str, tag_key: str, field: str, time_range: str) -> dict[str, list]:
+    """Return {tag_value: [{t, v}, ...]} averaged over 15-minute windows."""
     query = f'''
 from(bucket: "{INFLUX_BUCKET}")
-  |> range(start: -{range})
+  |> range(start: -{time_range})
   |> filter(fn: (r) => r._measurement == "{measurement}" and r._field == "{field}")
   |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
 '''
@@ -75,41 +83,44 @@ from(bucket: "{INFLUX_BUCKET}")
     return series
 
 
+def _safe_float(val) -> float | None:
+    """Parse a value to a rounded float, returning None on failure."""
+    try:
+        return round(float(val), 1)
+    except (TypeError, ValueError):
+        return None
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 
 @app.get("/api/rooms/current")
 async def rooms_current():
+    """Current temperature and humidity for all rooms."""
     temps = _last_by_tag("raumtemperatur", "raum", "temp")
     hums  = _last_by_tag("raumtemperatur", "raum", "hum")
     all_rooms = sorted(set(temps) | set(hums))
-    result = {r: {"temp": temps.get(r), "hum": hums.get(r)} for r in all_rooms}
-    return JSONResponse(result)
+    return JSONResponse({r: {"temp": temps.get(r), "hum": hums.get(r)} for r in all_rooms})
 
 
 @app.get("/api/rooms/history")
 async def rooms_history(range: str = "24h"):
+    """Temperature history for all rooms. range: 6h | 24h | 7d"""
     return JSONResponse(_history_by_tag("raumtemperatur", "raum", "temp", range))
 
 
 @app.get("/api/ventilation/current")
 async def ventilation_current():
+    """Current temperature and humidity for all ventilation air streams."""
     temps = _last_by_tag("lueftung", "luftstrom", "temp")
     hums  = _last_by_tag("lueftung", "luftstrom", "hum")
     all_streams = sorted(set(temps) | set(hums))
-    result = {s: {"temp": temps.get(s), "hum": hums.get(s)} for s in all_streams}
-    return JSONResponse(result)
+    return JSONResponse({s: {"temp": temps.get(s), "hum": hums.get(s)} for s in all_streams})
 
 
 @app.get("/api/ventilation/history")
 async def ventilation_history(range: str = "24h"):
+    """Temperature history for all ventilation air streams. range: 6h | 24h | 7d"""
     return JSONResponse(_history_by_tag("lueftung", "luftstrom", "temp", range))
-
-
-def _safe_float(val) -> float | None:
-    try:
-        return round(float(val), 1)
-    except (TypeError, ValueError):
-        return None
