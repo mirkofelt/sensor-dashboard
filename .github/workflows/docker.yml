@@ -31,3 +31,12 @@ jobs:
             -f visibility=public || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete old package versions (keep latest 2)
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: sensor-dashboard
+          package-type: container
+          min-versions-to-keep: 2
+          delete-only-untagged-versions: false
+        continue-on-error: true
