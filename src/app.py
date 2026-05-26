@@ -5,12 +5,14 @@ import json
 from pathlib import Path
 from fastapi import FastAPI, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 app = FastAPI(title="Sensor Dashboard")
 
 # Resolve templates relative to this file so the path works regardless of CWD
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 INFLUX_HOST   = os.environ["INFLUX_HOST"]
 INFLUX_PORT   = int(os.environ.get("INFLUX_PORT", "8086"))
