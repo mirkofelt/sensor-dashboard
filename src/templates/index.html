@@ -94,6 +94,23 @@
 <div class="updated" id="updated"></div>
 
 <script>
+function timeXAxis(range) {
+  const is7d = range === '7d';
+  return {
+    type: 'time',
+    time: {
+      unit: is7d ? 'day' : 'hour',
+      displayFormats: { hour: 'HH:mm', day: 'dd.MM.' },
+    },
+    ticks: {
+      color: '#8892a4',
+      maxRotation: 0,
+      maxTicksLimit: is7d ? 8 : 7,
+    },
+    grid: { color: '#2a2d3a' },
+  };
+}
+
 const ROOM_COLORS = [
   '#4f9cf9','#f97316','#4ade80','#f43f5e','#a855f7',
   '#22d3ee','#facc15','#fb7185','#34d399','#818cf8','#f472b6','#64748b'
@@ -191,7 +208,7 @@ async function loadCompare(range) {
   });
 
   const scales = {
-    x: { type: 'time', ticks: { color: '#8892a4' }, grid: { color: '#2a2d3a' } },
+    x: timeXAxis(range),
     y: {
       position: 'left',
       ticks: { color: '#8892a4', callback: v => hasBoth || hasTempOnly ? v + ' °C' : v + ' %' },
@@ -250,7 +267,7 @@ async function loadRoomsHistory(range) {
     data: {datasets},
     options: {
       scales: {
-        x: { type: 'time', ticks: { color: '#8892a4' }, grid: { color: '#2a2d3a' } },
+        x: timeXAxis(range),
         y: { ticks: { color: '#8892a4', callback: v => v + ' °C' }, grid: { color: '#2a2d3a' } }
       },
       plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
@@ -287,7 +304,7 @@ async function loadVentHistory(range) {
     data: {datasets},
     options: {
       scales: {
-        x: { type: 'time', ticks: { color: '#8892a4' }, grid: { color: '#2a2d3a' } },
+        x: timeXAxis(range),
         y: { ticks: { color: '#8892a4', callback: v => v + ' °C' }, grid: { color: '#2a2d3a' } }
       },
       plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
