@@ -11,7 +11,7 @@
   <Overview>Home sensor dashboard — room temperatures and ventilation data from InfluxDB. Dark theme, live charts with 6h/24h/7d range, auto-refresh every 60s.</Overview>
   <Category>Tools: HomeAutomation:</Category>
   <WebUI>http://[IP]:[PORT:8000]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/mirkofelt/sensor-dashboard/main/unraid-template.xml</TemplateURL>
+  <TemplateURL>https://raw.githubusercontent.com/mirkofelt/sensor-dashboard/main/sensor-dashboard.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/mirkofelt/sensor-dashboard/main/icon.png</Icon>
   <ExtraParams/>
   <PostArgs/>
