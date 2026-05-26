@@ -1,0 +1,12 @@
+services:
+  sensor-dashboard:
+    build: .
+    ports:
+      - "${DASHBOARD_PORT:-8000}:8000"
+    environment:
+      - INFLUX_HOST=${INFLUX_HOST}
+      - INFLUX_PORT=${INFLUX_PORT:-8086}
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET:-sensors}
+    restart: unless-stopped
