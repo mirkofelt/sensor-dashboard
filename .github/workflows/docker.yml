@@ -24,3 +24,10 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/mirkofelt/sensor-dashboard:latest
+
+      - name: Make package public
+        run: |
+          gh api -X PATCH /user/packages/container/sensor-dashboard \
+            -f visibility=public || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
