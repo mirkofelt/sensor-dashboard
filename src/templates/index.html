@@ -184,17 +184,15 @@ const VERBRAUCHER_KNOWN_LABELS = {
 const VERBRAUCHER_SORT_ORDER = ['boiler1_aktiv','boiler2_aktiv','waschmaschine_aktiv','lueftungsanlage_aktiv','ir_heizer_gesamt_aktiv'];
 const VERBRAUCHER_COLOR_POOL = ['#4f9cf9','#22d3ee','#f97316','#a855f7','#4ade80','#facc15','#f43f5e','#fb7185','#34d399','#818cf8','#f472b6','#64748b'];
 
+function _titleCase(s) {
+  return s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
 function _verbraucherLabel(f) {
   if (VERBRAUCHER_KNOWN_LABELS[f]) return VERBRAUCHER_KNOWN_LABELS[f];
-  if (f.endsWith('_ir_aktiv')) {
-    const r = f.slice(0, -9).replace(/_/g, ' ');
-    return r.charAt(0).toUpperCase() + r.slice(1) + ' (IR)';
-  }
-  if (f.endsWith('_fussbodenheizung')) {
-    const r = f.slice(0, -17).replace(/_/g, ' ');
-    return r.charAt(0).toUpperCase() + r.slice(1) + ' (FBH)';
-  }
-  return f.replace(/_/g, ' ');
+  if (f.endsWith('_ir_aktiv')) return _titleCase(f.slice(0, -9).replace(/_/g, ' ')) + ' (IR)';
+  if (f.endsWith('_fussbodenheizung')) return _titleCase(f.slice(0, -17).replace(/_/g, ' ')) + ' (FBH)';
+  return _titleCase(f.replace(/_/g, ' '));
 }
 
 function _sortVerbraucher(fields) {
@@ -214,7 +212,7 @@ const COOL24_COLORS = {
 };
 const COOL24_LABELS = {
   indoor_temp_c: 'Innenraum', outdoor_temp_c: 'Außen',
-  tpma_temp_c: 'TPMA', supply_temp_c: 'Zuluft (nach WP)', exhaust_temp_c: 'Abluft',
+  tpma_temp_c: 'Zuluft (vor WP)', supply_temp_c: 'Zuluft (nach WP)', exhaust_temp_c: 'Abluft',
 };
 
 let roomChart = null, ventChart = null, energieChart = null, verbraucherChart = null, cool24Chart = null, cmpChart = null;
@@ -465,7 +463,7 @@ async function loadCool24Current() {
     {label: 'Modus', val: `<span style="color:${modeColor};font-weight:700">${modeLabel}</span>`, sub: data.set_point_temp_c !== null ? 'Soll: '+data.set_point_temp_c.toFixed(1)+' °C' : ''},
     {label: 'Innenraum',       val: data.indoor_temp_c  !== null ? data.indoor_temp_c.toFixed(1)+' °C'  : '—', sub: ''},
     {label: 'Außen',           val: data.outdoor_temp_c !== null ? data.outdoor_temp_c.toFixed(1)+' °C' : '—', sub: ''},
-    {label: 'TPMA',            val: data.tpma_temp_c    !== null ? data.tpma_temp_c.toFixed(1)+' °C'    : '—', sub: ''},
+    {label: 'Zuluft (vor WP)', val: data.tpma_temp_c    !== null ? data.tpma_temp_c.toFixed(1)+' °C'    : '—', sub: ''},
     {label: 'Zuluft (nach WP)',val: data.supply_temp_c  !== null ? data.supply_temp_c.toFixed(1)+' °C'  : '—', sub: ''},
     {label: 'Abluft',          val: data.exhaust_temp_c !== null ? data.exhaust_temp_c.toFixed(1)+' °C' : '—', sub: ''},
     {label: 'Leistung',        val: data.power_w !== null ? _watt(data.power_w) : '—', sub: data.power_pct !== null ? data.power_pct.toFixed(0)+' %' : ''},

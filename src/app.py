@@ -151,7 +151,7 @@ _COMFOCLIME_HISTORY_FIELDS = ["indoor_temp_c", "outdoor_temp_c", "tpma_temp_c", 
 _COMFOCLIME_SERIES = {
     "indoor_temp_c": ("CC Innenraum", "°C"),
     "outdoor_temp_c": ("CC Außen", "°C"),
-    "tpma_temp_c": ("CC TPMA", "°C"),
+    "tpma_temp_c": ("CC Zuluft (vor WP)", "°C"),
     "supply_temp_c": ("CC Zuluft (nach WP)", "°C"),
     "exhaust_temp_c": ("CC Abluft", "°C"),
     "power_w": ("CC Leistung", "W"),
@@ -217,6 +217,16 @@ from(bucket: "{INFLUX_BUCKET}")
     return series
 
 
+_LEGACY_VERBRAUCHER_FIELDS = {
+    "ir_heizer_aktiv", "bad_eg_ir_aktiv", "bad_og_ir_aktiv",
+    "ir_heizer_w", "boiler1_w", "boiler2_w", "waschmaschine_w", "lueftungsanlage_w",
+}
+
+
+def _is_valid_verbraucher_field(f: str) -> bool:
+    return f not in _LEGACY_VERBRAUCHER_FIELDS and not f.endswith("_w")
+
+
 def _verbraucher_label(field: str) -> str:
     known = {
         "boiler1_aktiv": "Boiler 1", "boiler2_aktiv": "Boiler 2",
@@ -253,13 +263,13 @@ async def energie_history(range: str = "24h"):
 @app.get("/api/verbraucher/current")
 async def verbraucher_current():
     """Current active/inactive (0/1) state for all consumers and per-room heating."""
-    return JSONResponse(_last_all_fields("verbraucher"))
+    return JSONResponse({k: v for k, v in _last_all_fields("verbraucher").items() if _is_valid_verbraucher_field(k)})
 
 
 @app.get("/api/verbraucher/history")
 async def verbraucher_history(range: str = "24h"):
     """Active/inactive history for all consumers. range: 6h | 24h | 7d"""
-    return JSONResponse(_history_all_fields("verbraucher", range))
+    return JSONResponse({k: v for k, v in _history_all_fields("verbraucher", range).items() if _is_valid_verbraucher_field(k)})
 
 
 @app.get("/api/comfoclime/current")
@@ -291,7 +301,7 @@ async def list_series():
         "pv_w": "W", "verbrauch_w": "W", "bezug_w": "W", "einspeisung_w": "W",
         "laden_w": "W", "entladen_w": "W", "autonomie_pct": "%", "eigenverbrauch_pct": "%",
     }
-    verbraucher_fields = list(_last_all_fields("verbraucher").keys())
+    verbraucher_fields = [f for f in _last_all_fields("verbraucher") if _is_valid_verbraucher_field(f)]
 
     series = []
     for field, lbl in _ENERGIE_LABELS.items():
