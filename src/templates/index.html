@@ -176,15 +176,36 @@ const ENERGIE_LABELS = {
 };
 const ENERGIE_CHART_FIELDS = ['pv_w','verbrauch_w','bezug_w','einspeisung_w','laden_w','entladen_w'];
 
-const VERBRAUCHER_COLORS = {
-  boiler1_w: '#4f9cf9', boiler2_w: '#22d3ee', ir_heizer_w: '#f97316',
-  waschmaschine_w: '#a855f7', lueftungsanlage_w: '#4ade80',
+const VERBRAUCHER_KNOWN_LABELS = {
+  boiler1_aktiv: 'Boiler 1', boiler2_aktiv: 'Boiler 2',
+  ir_heizer_gesamt_aktiv: 'IR-Heizer (ges.)',
+  waschmaschine_aktiv: 'Waschmaschine', lueftungsanlage_aktiv: 'Lüftungsanlage',
 };
-const VERBRAUCHER_LABELS = {
-  boiler1_w: 'Boiler 1', boiler2_w: 'Boiler 2', ir_heizer_w: 'IR-Heizer',
-  waschmaschine_w: 'Waschmaschine', lueftungsanlage_w: 'Lüftungsanlage',
-};
-const VERBRAUCHER_CHART_FIELDS = ['boiler1_w','boiler2_w','ir_heizer_w','waschmaschine_w','lueftungsanlage_w'];
+const VERBRAUCHER_SORT_ORDER = ['boiler1_aktiv','boiler2_aktiv','waschmaschine_aktiv','lueftungsanlage_aktiv','ir_heizer_gesamt_aktiv'];
+const VERBRAUCHER_COLOR_POOL = ['#4f9cf9','#22d3ee','#f97316','#a855f7','#4ade80','#facc15','#f43f5e','#fb7185','#34d399','#818cf8','#f472b6','#64748b'];
+
+function _verbraucherLabel(f) {
+  if (VERBRAUCHER_KNOWN_LABELS[f]) return VERBRAUCHER_KNOWN_LABELS[f];
+  if (f.endsWith('_ir_aktiv')) {
+    const r = f.slice(0, -9).replace(/_/g, ' ');
+    return r.charAt(0).toUpperCase() + r.slice(1) + ' (IR)';
+  }
+  if (f.endsWith('_fussbodenheizung')) {
+    const r = f.slice(0, -17).replace(/_/g, ' ');
+    return r.charAt(0).toUpperCase() + r.slice(1) + ' (FBH)';
+  }
+  return f.replace(/_/g, ' ');
+}
+
+function _sortVerbraucher(fields) {
+  return [...fields].sort((a, b) => {
+    const ai = VERBRAUCHER_SORT_ORDER.indexOf(a), bi = VERBRAUCHER_SORT_ORDER.indexOf(b);
+    if (ai >= 0 && bi >= 0) return ai - bi;
+    if (ai >= 0) return -1;
+    if (bi >= 0) return 1;
+    return a.localeCompare(b);
+  });
+}
 
 const COOL24_TEMP_FIELDS = ['indoor_temp_c','outdoor_temp_c','tpma_temp_c','supply_temp_c','exhaust_temp_c'];
 const COOL24_COLORS = {
@@ -400,35 +421,25 @@ async function loadEnergieHistory(range) {
 async function loadVerbraucherCurrent() {
   const data = await fetch('/api/verbraucher/current').then(r => r.json());
   const grid = document.getElementById('verbraucher-grid');
-  const items = [
-    {k:'boiler1_w',        label:'Boiler 1'},
-    {k:'boiler2_w',        label:'Boiler 2'},
-    {k:'ir_heizer_w',      label:'IR-Heizer'},
-    {k:'waschmaschine_w',  label:'Waschmaschine'},
-    {k:'lueftungsanlage_w',label:'Lüftungsanlage'},
-    {k:'ir_heizer_aktiv',  label:'IR WZ an/aus',  special: 'aktiv'},
-    {k:'bad_eg_ir_aktiv',  label:'IR Bad EG',      special: 'aktiv'},
-    {k:'bad_og_ir_aktiv',  label:'IR Bad OG',      special: 'aktiv'},
-  ];
-  grid.innerHTML = items.map(({k, label, special}) => {
-    const v = data[k];
-    let val;
-    if (special === 'aktiv') val = (v !== null && v !== undefined) ? (v ? 'AN' : 'AUS') : '—';
-    else val = _watt(v);
-    const active = (v !== null && v !== undefined && v > 0) ? 'active' : '';
-    return `<div class="vent-card ${active}"><div class="label">${label}</div><div class="val">${val}</div></div>`;
+  const fields = _sortVerbraucher(Object.keys(data));
+  grid.innerHTML = fields.map(f => {
+    const v = data[f];
+    const on = v !== null && v !== undefined && v > 0;
+    const val = (v !== null && v !== undefined) ? (on ? 'AN' : 'AUS') : '—';
+    return `<div class="vent-card ${on ? 'active' : ''}"><div class="label">${_verbraucherLabel(f)}</div><div class="val">${val}</div></div>`;
   }).join('');
 }
 
 async function loadVerbraucherHistory(range) {
   const data = await fetch(`/api/verbraucher/history?range=${range}`).then(r => r.json());
   const ctx = document.getElementById('verbraucher-chart').getContext('2d');
-  const datasets = VERBRAUCHER_CHART_FIELDS.filter(f => data[f]?.length).map(f => ({
-    label: VERBRAUCHER_LABELS[f],
+  const fields = _sortVerbraucher(Object.keys(data).filter(f => data[f]?.length));
+  const datasets = fields.map((f, i) => ({
+    label: _verbraucherLabel(f),
     data: data[f].map(p => ({x: p.t, y: p.v})),
-    borderColor: VERBRAUCHER_COLORS[f],
+    borderColor: VERBRAUCHER_COLOR_POOL[i % VERBRAUCHER_COLOR_POOL.length],
     backgroundColor: 'transparent',
-    borderWidth: 2, pointRadius: 0, tension: 0.3,
+    borderWidth: 2, pointRadius: 0, tension: 0, stepped: true,
   }));
   if (verbraucherChart) verbraucherChart.destroy();
   verbraucherChart = new Chart(ctx, {
@@ -437,7 +448,7 @@ async function loadVerbraucherHistory(range) {
     options: {
       scales: {
         x: timeXAxis(range),
-        y: { ticks: { color: '#8892a4', callback: v => v >= 1000 ? (v/1000).toFixed(1)+' kW' : v+' W' }, grid: { color: '#2a2d3a' } }
+        y: { min: 0, max: 1, ticks: { color: '#8892a4', stepSize: 1, callback: v => v === 1 ? 'AN' : 'AUS' }, grid: { color: '#2a2d3a' } }
       },
       plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
       interaction: { mode: 'index', intersect: false },
