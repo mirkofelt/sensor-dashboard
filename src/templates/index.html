@@ -184,8 +184,9 @@ const VERBRAUCHER_KNOWN_LABELS = {
 const VERBRAUCHER_SORT_ORDER = ['boiler1_aktiv','boiler2_aktiv','waschmaschine_aktiv','lueftungsanlage_aktiv','ir_heizer_gesamt_aktiv'];
 const VERBRAUCHER_COLOR_POOL = ['#4f9cf9','#22d3ee','#f97316','#a855f7','#4ade80','#facc15','#f43f5e','#fb7185','#34d399','#818cf8','#f472b6','#64748b'];
 
+const _ROOM_ABBR = new Set(['EG','OG','DG','UG','WC']);
 function _titleCase(s) {
-  return s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return s.split(' ').map(w => _ROOM_ABBR.has(w.toUpperCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 function _verbraucherLabel(f) {

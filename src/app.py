@@ -227,6 +227,13 @@ def _is_valid_verbraucher_field(f: str) -> bool:
     return f not in _LEGACY_VERBRAUCHER_FIELDS and not f.endswith("_w")
 
 
+_ROOM_ABBR = {"eg", "og", "dg", "ug", "wc"}
+
+
+def _room_title(s: str) -> str:
+    return " ".join(w.upper() if w.lower() in _ROOM_ABBR else w.capitalize() for w in s.split())
+
+
 def _verbraucher_label(field: str) -> str:
     known = {
         "boiler1_aktiv": "Boiler 1", "boiler2_aktiv": "Boiler 2",
@@ -236,12 +243,10 @@ def _verbraucher_label(field: str) -> str:
     if field in known:
         return known[field]
     if field.endswith("_ir_aktiv"):
-        room = field[:-len("_ir_aktiv")].replace("_", " ").title()
-        return f"{room} (IR)"
+        return f"{_room_title(field[:-len('_ir_aktiv')].replace('_', ' '))} (IR)"
     if field.endswith("_fussbodenheizung"):
-        room = field[:-len("_fussbodenheizung")].replace("_", " ").title()
-        return f"{room} (FBH)"
-    return field.replace("_", " ").title()
+        return f"{_room_title(field[:-len('_fussbodenheizung')].replace('_', ' '))} (FBH)"
+    return _room_title(field.replace("_", " "))
 
 
 _ENERGIE_FIELDS = ["pv_w", "verbrauch_w", "bezug_w", "einspeisung_w", "laden_w", "entladen_w",
