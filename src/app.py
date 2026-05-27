@@ -135,10 +135,27 @@ async def ventilation_history(range: str = "24h"):
     return JSONResponse(_history_by_tag("lueftung", "luftstrom", "temp", range))
 
 
-_TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom", "energie": None, "verbraucher": None}
+_TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom", "energie": None, "verbraucher": None, "comfoclime": None}
 _VENT_LABELS = {"aussenluft": "Außenluft", "abluft": "Abluft", "fortluft": "Fortluft", "zuluft": "Zuluft"}
 _FIELD_LABELS = {"temp": "Temp", "hum": "Feuchte"}
 _FIELD_UNITS  = {"temp": "°C", "hum": "%"}
+
+_COMFOCLIME_FIELDS = [
+    "mode", "heat_pump_status",
+    "indoor_temp_c", "outdoor_temp_c", "set_point_temp_c",
+    "tpma_temp_c", "supply_temp_c", "exhaust_temp_c",
+    "supply_coil_temp_c", "exhaust_coil_temp_c",
+    "power_pct", "power_w", "fan_speed",
+]
+_COMFOCLIME_HISTORY_FIELDS = ["indoor_temp_c", "outdoor_temp_c", "tpma_temp_c", "supply_temp_c", "exhaust_temp_c"]
+_COMFOCLIME_SERIES = {
+    "indoor_temp_c": ("CC Innenraum", "°C"),
+    "outdoor_temp_c": ("CC Außen", "°C"),
+    "tpma_temp_c": ("CC TPMA", "°C"),
+    "supply_temp_c": ("CC Zuluft (nach WP)", "°C"),
+    "exhaust_temp_c": ("CC Abluft", "°C"),
+    "power_w": ("CC Leistung", "W"),
+}
 
 
 def _last_field(measurement: str, field: str) -> float | None:
@@ -201,6 +218,18 @@ async def verbraucher_history(range: str = "24h"):
     return JSONResponse({f: _history_field("verbraucher", f, range) for f in _VERBRAUCHER_FIELDS})
 
 
+@app.get("/api/comfoclime/current")
+async def comfoclime_current():
+    """Current ComfoClime 24 heat pump values."""
+    return JSONResponse({f: _last_field("comfoclime", f) for f in _COMFOCLIME_FIELDS})
+
+
+@app.get("/api/comfoclime/history")
+async def comfoclime_history(range: str = "24h"):
+    """Temperature history for ComfoClime 24. range: 6h | 24h | 7d"""
+    return JSONResponse({f: _history_field("comfoclime", f, range) for f in _COMFOCLIME_HISTORY_FIELDS})
+
+
 @app.get("/api/series")
 async def list_series():
     """Return all available series with id, label, unit, and group."""
@@ -235,6 +264,8 @@ async def list_series():
         series.append({"id": f"energie::{field}", "label": lbl, "unit": _ENERGIE_UNITS[field], "group": "Energie"})
     for field, lbl in _VERBRAUCHER_LABELS.items():
         series.append({"id": f"verbraucher::{field}", "label": lbl, "unit": _VERBRAUCHER_UNITS[field], "group": "Verbraucher"})
+    for field, (lbl, unit) in _COMFOCLIME_SERIES.items():
+        series.append({"id": f"comfoclime::{field}", "label": lbl, "unit": unit, "group": "ComfoClime 24"})
     for stream in sorted(set(vent_t) | set(vent_h)):
         lbl = _VENT_LABELS.get(stream, stream.capitalize())
         for field in ("temp", "hum"):
@@ -288,7 +319,7 @@ async def compare(series: str = Query(default=""), range: str = "24h"):
 '''
         rows = _flux_query(query)
         data = [{"t": r["_time"], "v": v} for r in rows if (v := _safe_float(r.get("_value"))) is not None and r.get("_time")]
-        unit = _FIELD_UNITS.get(field, "W")
+        unit = "°C" if field.endswith("_temp_c") else _FIELD_UNITS.get(field, "W")
         result.append({"id": s, "unit": unit, "data": data})
 
     return JSONResponse(result)

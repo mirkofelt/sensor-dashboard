@@ -95,6 +95,19 @@
   <canvas id="verbraucher-chart"></canvas>
 </div>
 
+<h2>ComfoClime 24</h2>
+<div class="vent-grid" id="cool24-grid"></div>
+
+<h2>Verlauf ComfoClime</h2>
+<div class="chart-wrap">
+  <div class="range-btns" id="cool24-range">
+    <button data-r="6h">6h</button>
+    <button data-r="24h" class="active">24h</button>
+    <button data-r="7d">7d</button>
+  </div>
+  <canvas id="cool24-chart"></canvas>
+</div>
+
 <h2>Lüftungsanlage</h2>
 <div class="vent-grid" id="vent-grid"></div>
 
@@ -173,8 +186,18 @@ const VERBRAUCHER_LABELS = {
 };
 const VERBRAUCHER_CHART_FIELDS = ['boiler1_w','boiler2_w','ir_heizer_w','waschmaschine_w','lueftungsanlage_w'];
 
-let roomChart = null, ventChart = null, energieChart = null, verbraucherChart = null, cmpChart = null;
-let roomRange = '24h', ventRange = '24h', energieRange = '24h', verbraucherRange = '24h', cmpRange = '24h';
+const COOL24_TEMP_FIELDS = ['indoor_temp_c','outdoor_temp_c','tpma_temp_c','supply_temp_c','exhaust_temp_c'];
+const COOL24_COLORS = {
+  indoor_temp_c: '#4f9cf9', outdoor_temp_c: '#22d3ee',
+  tpma_temp_c: '#f97316', supply_temp_c: '#4ade80', exhaust_temp_c: '#a855f7',
+};
+const COOL24_LABELS = {
+  indoor_temp_c: 'Innenraum', outdoor_temp_c: 'Außen',
+  tpma_temp_c: 'TPMA', supply_temp_c: 'Zuluft (nach WP)', exhaust_temp_c: 'Abluft',
+};
+
+let roomChart = null, ventChart = null, energieChart = null, verbraucherChart = null, cool24Chart = null, cmpChart = null;
+let roomRange = '24h', ventRange = '24h', energieRange = '24h', verbraucherRange = '24h', cool24Range = '24h', cmpRange = '24h';
 
 const CMP_COLORS = [
   '#4f9cf9','#f97316','#4ade80','#f43f5e','#a855f7',
@@ -422,6 +445,50 @@ async function loadVerbraucherHistory(range) {
   });
 }
 
+async function loadCool24Current() {
+  const data = await fetch('/api/comfoclime/current').then(r => r.json());
+  const grid = document.getElementById('cool24-grid');
+  const modeMap = {0: ['AUS', '#64748b'], 1: ['HEIZEN', '#f97316'], 2: ['KÜHLEN', '#22d3ee']};
+  const [modeLabel, modeColor] = data.mode !== null ? (modeMap[data.mode] || ['?', '#8892a4']) : ['—', '#8892a4'];
+  const items = [
+    {label: 'Modus', val: `<span style="color:${modeColor};font-weight:700">${modeLabel}</span>`, sub: data.set_point_temp_c !== null ? 'Soll: '+data.set_point_temp_c.toFixed(1)+' °C' : ''},
+    {label: 'Innenraum',       val: data.indoor_temp_c  !== null ? data.indoor_temp_c.toFixed(1)+' °C'  : '—', sub: ''},
+    {label: 'Außen',           val: data.outdoor_temp_c !== null ? data.outdoor_temp_c.toFixed(1)+' °C' : '—', sub: ''},
+    {label: 'TPMA',            val: data.tpma_temp_c    !== null ? data.tpma_temp_c.toFixed(1)+' °C'    : '—', sub: ''},
+    {label: 'Zuluft (nach WP)',val: data.supply_temp_c  !== null ? data.supply_temp_c.toFixed(1)+' °C'  : '—', sub: ''},
+    {label: 'Abluft',          val: data.exhaust_temp_c !== null ? data.exhaust_temp_c.toFixed(1)+' °C' : '—', sub: ''},
+    {label: 'Leistung',        val: data.power_w !== null ? _watt(data.power_w) : '—', sub: data.power_pct !== null ? data.power_pct.toFixed(0)+' %' : ''},
+  ];
+  grid.innerHTML = items.map(({label, val, sub}) =>
+    `<div class="vent-card"><div class="label">${label}</div><div class="val">${val}</div>${sub ? '<div class="sub">'+sub+'</div>' : ''}</div>`
+  ).join('');
+}
+
+async function loadCool24History(range) {
+  const data = await fetch(`/api/comfoclime/history?range=${range}`).then(r => r.json());
+  const ctx = document.getElementById('cool24-chart').getContext('2d');
+  const datasets = COOL24_TEMP_FIELDS.filter(f => data[f]?.length).map(f => ({
+    label: COOL24_LABELS[f],
+    data: data[f].map(p => ({x: p.t, y: p.v})),
+    borderColor: COOL24_COLORS[f],
+    backgroundColor: 'transparent',
+    borderWidth: 2, pointRadius: 0, tension: 0.3,
+  }));
+  if (cool24Chart) cool24Chart.destroy();
+  cool24Chart = new Chart(ctx, {
+    type: 'line',
+    data: {datasets},
+    options: {
+      scales: {
+        x: timeXAxis(range),
+        y: { ticks: { color: '#8892a4', callback: v => v + ' °C' }, grid: { color: '#2a2d3a' } }
+      },
+      plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
+      interaction: { mode: 'index', intersect: false },
+    }
+  });
+}
+
 async function loadVentCurrent() {
   const data = await fetch('/api/ventilation/current').then(r => r.json());
   const grid = document.getElementById('vent-grid');
@@ -490,10 +557,11 @@ setupRangeBtns('room-range',         r => { roomRange         = r; loadRoomsHist
 setupRangeBtns('vent-range',         r => { ventRange         = r; loadVentHistory(r); });
 setupRangeBtns('energie-range',      r => { energieRange      = r; loadEnergieHistory(r); });
 setupRangeBtns('verbraucher-range',  r => { verbraucherRange  = r; loadVerbraucherHistory(r); });
+setupRangeBtns('cool24-range',       r => { cool24Range       = r; loadCool24History(r); });
 setupRangeBtns('cmp-range',          r => { cmpRange          = r; loadCompare(r); });
 
 async function refresh() {
-  await Promise.all([loadRoomsCurrent(), loadVentCurrent(), loadEnergieCurrent(), loadVerbraucherCurrent()]);
+  await Promise.all([loadRoomsCurrent(), loadVentCurrent(), loadEnergieCurrent(), loadVerbraucherCurrent(), loadCool24Current()]);
   document.getElementById('updated').textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
 }
 
@@ -501,6 +569,7 @@ refresh();
 loadRoomsHistory(roomRange);
 loadEnergieHistory(energieRange);
 loadVerbraucherHistory(verbraucherRange);
+loadCool24History(cool24Range);
 loadVentHistory(ventRange);
 loadSeriesMeta();
 setInterval(() => {
@@ -508,6 +577,7 @@ setInterval(() => {
   loadRoomsHistory(roomRange);
   loadEnergieHistory(energieRange);
   loadVerbraucherHistory(verbraucherRange);
+  loadCool24History(cool24Range);
   loadVentHistory(ventRange);
   loadCompare(cmpRange);
 }, 60000);
