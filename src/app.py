@@ -145,7 +145,10 @@ async def lueftungsanlage_current():
     # Cool24 heat pump
     cool24 = {f: _last_field("comfoclime", f) for f in _COMFOCLIME_FIELDS}
 
-    return JSONResponse({"q350": q350, "cool24": cool24})
+    # Q350 power via ComfoConnect
+    q350_power_w = _last_field("q350", "power_w")
+
+    return JSONResponse({"q350": q350, "cool24": cool24, "q350_power_w": q350_power_w})
 
 
 @app.get("/api/lueftungsanlage/history")
@@ -153,10 +156,11 @@ async def lueftungsanlage_history(range: str = "24h"):
     """Combined temperature history: Q350 air streams + Cool24 heat pump temps."""
     q350 = _history_by_tag("lueftung", "luftstrom", "temp", range)
     cool24 = {f: _history_field("comfoclime", f, range) for f in _COMFOCLIME_HISTORY_FIELDS}
-    return JSONResponse({"q350": q350, "cool24": cool24})
+    q350_power_w = _history_field("q350", "power_w", range)
+    return JSONResponse({"q350": q350, "cool24": cool24, "q350_power_w": q350_power_w})
 
 
-_TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom", "energie": None, "verbraucher": None, "comfoclime": None, "presence": "room"}
+_TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom", "energie": None, "verbraucher": None, "comfoclime": None, "presence": "room", "q350": None}
 _VENT_LABELS = {"aussenluft": "Außenluft", "abluft": "Abluft", "fortluft": "Fortluft", "zuluft": "Zuluft"}
 _FIELD_LABELS = {"temp": "Temp", "hum": "Feuchte"}
 _FIELD_UNITS  = {"temp": "°C", "hum": "%", "co2": "ppm"}
@@ -347,6 +351,7 @@ async def list_series():
                 })
     for field, (lbl, unit) in _COMFOCLIME_SERIES.items():
         series.append({"id": f"comfoclime::{field}", "label": lbl, "unit": unit, "group": "Lüftungsanlage"})
+    series.append({"id": "q350::power_w", "label": "Q350 Leistung", "unit": "W", "group": "Lüftungsanlage"})
     for room in sorted(set(room_t) | set(room_h)):
         for field in ("temp", "hum"):
             if (field == "temp" and room in room_t) or (field == "hum" and room in room_h):

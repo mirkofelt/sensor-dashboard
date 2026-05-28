@@ -568,6 +568,11 @@ async function loadLueftungsanlageCurrent() {
     grid.innerHTML += `<div class="vent-card stream-${stream}"><div class="label">${VENT_LABELS[stream] || stream}</div><div class="val">${t}</div><div class="sub">${h}</div></div>`;
   });
 
+  // Q350 power card
+  const pw = data.q350_power_w;
+  const pwVal = (pw !== null && pw !== undefined) ? _watt(pw) : '—';
+  grid.innerHTML += `<div class="vent-card" style="border-top:3px solid #64748b"><div class="label">Q350 Leistung</div><div class="val">${pwVal}</div></div>`;
+
   // Cool24 heat pump cards
   const modeMap = {0: ['AUS', '#64748b'], 1: ['HEIZEN', '#f97316'], 2: ['KÜHLEN', '#22d3ee']};
   const [modeLabel, modeColor] = cool24.mode !== null && cool24.mode !== undefined
@@ -612,7 +617,7 @@ async function loadLueftungsanlageHistory(range) {
     yAxisID: 'y',
   }));
 
-  // Cool24 power dataset on secondary Y axis
+  // Power datasets on secondary Y axis (Cool24 + Q350)
   const ccPowerDatasets = COOL24_POWER_FIELDS.filter(f => cool24[f]?.length).map(f => ({
     label: COOL24_LABELS[f],
     data: cool24[f].map(p => ({x: p.t, y: p.v})),
@@ -622,7 +627,17 @@ async function loadLueftungsanlageHistory(range) {
     yAxisID: 'y1',
   }));
 
-  const datasets = [...q350Datasets, ...ccTempDatasets, ...ccPowerDatasets];
+  const q350PowerPts = data.q350_power_w || [];
+  const q350PowerDataset = q350PowerPts.length ? [{
+    label: 'Q350 Leistung',
+    data: q350PowerPts.map(p => ({x: p.t, y: p.v})),
+    borderColor: '#64748b',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [4, 2],
+    yAxisID: 'y1',
+  }] : [];
+
+  const datasets = [...q350Datasets, ...ccTempDatasets, ...ccPowerDatasets, ...q350PowerDataset];
   if (lueftungChart) lueftungChart.destroy();
   lueftungChart = new Chart(ctx, {
     type: 'line',
