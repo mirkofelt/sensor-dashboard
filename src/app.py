@@ -163,7 +163,22 @@ async def lueftungsanlage_history(range: str = "24h"):
 _TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom", "energie": None, "verbraucher": None, "comfoclime": None, "presence": "room", "q350": None}
 _VENT_LABELS = {"aussenluft": "Außenluft", "abluft": "Abluft", "fortluft": "Fortluft", "zuluft": "Zuluft"}
 _FIELD_LABELS = {"temp": "Temp", "hum": "Feuchte"}
-_FIELD_UNITS  = {"temp": "°C", "hum": "%", "co2": "ppm"}
+_FIELD_UNITS  = {
+    "temp": "°C", "hum": "%", "co2": "ppm",
+    "heating": "", "active": "", "mode": "", "heat_pump_status": "",
+    "fan_speed": "rpm",
+    "supply_air_flow": "m³/h", "exhaust_air_flow": "m³/h",
+}
+
+
+def _unit_for_field(field: str) -> str:
+    if field.endswith("_temp_c"):
+        return "°C"
+    if field.endswith("_w"):
+        return "W"
+    if field.endswith("_pct"):
+        return "%"
+    return _FIELD_UNITS.get(field, "")
 
 _COMFOCLIME_FIELDS = [
     "mode", "heat_pump_status",
@@ -346,7 +361,7 @@ async def list_series():
                 series.append({
                     "id": f"lueftung:{stream}:{field}",
                     "label": f"Q350 {lbl} ({_FIELD_LABELS[field]})",
-                    "unit": _FIELD_UNITS[field],
+                    "unit": _unit_for_field(field),
                     "group": "Lüftungsanlage",
                 })
     for field, (lbl, unit) in _COMFOCLIME_SERIES.items():
@@ -358,7 +373,7 @@ async def list_series():
                 series.append({
                     "id": f"raumtemperatur:{room}:{field}",
                     "label": f"{room} ({_FIELD_LABELS[field]})",
-                    "unit": _FIELD_UNITS[field],
+                    "unit": _unit_for_field(field),
                     "group": "Räume",
                 })
     for room in sorted(set(room_co2)):
@@ -410,7 +425,7 @@ async def compare(series: str = Query(default=""), range: str = "24h"):
 '''
         rows = _flux_query(query)
         data = [{"t": r["_time"], "v": v} for r in rows if (v := _safe_float(r.get("_value"))) is not None and r.get("_time")]
-        unit = "°C" if field.endswith("_temp_c") else _FIELD_UNITS.get(field, "")
+        unit = _unit_for_field(field)
         result.append({"id": s, "unit": unit, "data": data})
 
     return JSONResponse(result)
