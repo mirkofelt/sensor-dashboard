@@ -94,34 +94,99 @@ def test_rooms_history_custom_range():
 
 
 # ---------------------------------------------------------------------------
-# Ventilation endpoints
+# Lüftungsanlage (unified) endpoints
 # ---------------------------------------------------------------------------
 
-VENT_ROWS = [
-    {"luftstrom": "zuluft",    "_value": "18.3", "_time": "2024-01-01T12:00:00Z"},
-    {"luftstrom": "abluft",    "_value": "22.1", "_time": "2024-01-01T12:00:00Z"},
-    {"luftstrom": "aussenluft","_value": "12.4", "_time": "2024-01-01T12:00:00Z"},
-    {"luftstrom": "fortluft",  "_value": "8.9",  "_time": "2024-01-01T12:00:00Z"},
-]
-
-def test_ventilation_current_structure():
-    with patch("app._flux_query", return_value=VENT_ROWS):
-        response = client.get("/api/ventilation/current")
+def test_lueftungsanlage_current_structure():
+    with patch("app._last_by_tag", return_value={"zuluft": 18.3, "abluft": 22.1}), \
+         patch("app._last_field", return_value=None):
+        response = client.get("/api/lueftungsanlage/current")
     assert response.status_code == 200
     data = response.json()
-    for stream in ("zuluft", "abluft", "aussenluft", "fortluft"):
-        assert stream in data
-        assert "temp" in data[stream]
+    assert "q350" in data
+    assert "cool24" in data
+    assert "zuluft" in data["q350"]
+    assert "temp" in data["q350"]["zuluft"]
+    assert "hum" in data["q350"]["zuluft"]
 
-def test_ventilation_current_values():
-    with patch("app._flux_query", return_value=VENT_ROWS):
-        response = client.get("/api/ventilation/current")
+def test_lueftungsanlage_current_cool24_keys():
+    with patch("app._last_by_tag", return_value={}), \
+         patch("app._last_field", return_value=None):
+        response = client.get("/api/lueftungsanlage/current")
     data = response.json()
-    assert data["zuluft"]["temp"] == 18.3
-    assert data["abluft"]["temp"] == 22.1
+    for field in ("mode", "heat_pump_status", "tpma_temp_c", "supply_temp_c"):
+        assert field in data["cool24"]
 
-def test_ventilation_history_range_forwarded():
+def test_lueftungsanlage_history_range_forwarded():
+    with patch("app._history_by_tag", return_value={}) as mock_hbt, \
+         patch("app._history_field", return_value=[]):
+        client.get("/api/lueftungsanlage/history?range=6h")
+    mock_hbt.assert_called_once_with("lueftung", "luftstrom", "temp", "6h")
+
+
+# ---------------------------------------------------------------------------
+# CO2 history endpoint
+# ---------------------------------------------------------------------------
+
+CO2_ROWS = [
+    {"raum": "Wohnzimmer", "_value": "520.0", "_time": "2024-01-01T10:00:00Z"},
+    {"raum": "Wohnzimmer", "_value": "580.0", "_time": "2024-01-01T10:15:00Z"},
+]
+
+def test_co2history_structure():
+    with patch("app._flux_query", return_value=CO2_ROWS):
+        response = client.get("/api/rooms/co2history")
+    assert response.status_code == 200
+    data = response.json()
+    assert "Wohnzimmer" in data
+    assert data["Wohnzimmer"][0] == {"t": "2024-01-01T10:00:00Z", "v": 520.0}
+
+def test_co2history_range_forwarded():
     with patch("app._flux_query", return_value=[]) as mock_q:
-        client.get("/api/ventilation/history?range=6h")
+        client.get("/api/rooms/co2history?range=7d")
     call_args = mock_q.call_args[0][0]
-    assert "6h" in call_args
+    assert "7d" in call_args
+    assert "co2" in call_args
+
+
+# ---------------------------------------------------------------------------
+# Presence endpoints
+# ---------------------------------------------------------------------------
+
+PRESENCE_ROWS = [
+    {"room": "Wohnzimmer",   "_value": "1.0", "_time": "2024-01-01T12:00:00Z"},
+    {"room": "Schlafzimmer", "_value": "0.0", "_time": "2024-01-01T12:00:00Z"},
+]
+
+def test_presence_current_structure():
+    with patch("app._flux_query", return_value=PRESENCE_ROWS):
+        response = client.get("/api/presence/current")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["Wohnzimmer"] == 1.0
+    assert data["Schlafzimmer"] == 0.0
+
+def test_presence_current_empty():
+    with patch("app._flux_query", return_value=[]):
+        response = client.get("/api/presence/current")
+    assert response.status_code == 200
+    assert response.json() == {}
+
+def test_presence_history_structure():
+    history_rows = [
+        {"room": "Wohnzimmer", "_value": "1.0", "_time": "2024-01-01T10:00:00Z"},
+        {"room": "Wohnzimmer", "_value": "0.0", "_time": "2024-01-01T10:15:00Z"},
+    ]
+    with patch("app._flux_query", return_value=history_rows):
+        response = client.get("/api/presence/history")
+    assert response.status_code == 200
+    data = response.json()
+    assert "Wohnzimmer" in data
+    assert data["Wohnzimmer"][0] == {"t": "2024-01-01T10:00:00Z", "v": 1.0}
+
+def test_presence_history_range_forwarded():
+    with patch("app._flux_query", return_value=[]) as mock_q:
+        client.get("/api/presence/history?range=7d")
+    call_args = mock_q.call_args[0][0]
+    assert "7d" in call_args
+    assert "presence" in call_args

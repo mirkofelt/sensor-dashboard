@@ -21,6 +21,7 @@
   .card .room { font-size: .75rem; color: var(--muted); margin-bottom: .35rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card .temp { font-size: 1.6rem; font-weight: 700; line-height: 1; }
   .card .hum  { font-size: .8rem; color: var(--muted); margin-top: .25rem; }
+  .card .co2  { font-size: .75rem; color: var(--cool); margin-top: .2rem; }
   .chart-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem; }
   .range-btns { display: flex; gap: .5rem; margin-bottom: 1rem; }
   .range-btns button { background: var(--border); border: none; color: var(--muted); padding: .3rem .75rem; border-radius: 6px; cursor: pointer; font-size: .8rem; }
@@ -69,6 +70,16 @@
   <canvas id="room-chart"></canvas>
 </div>
 
+<h2>Verlauf CO₂</h2>
+<div class="chart-wrap">
+  <div class="range-btns" id="co2-range">
+    <button data-r="6h">6h</button>
+    <button data-r="24h" class="active">24h</button>
+    <button data-r="7d">7d</button>
+  </div>
+  <canvas id="co2-chart"></canvas>
+</div>
+
 <h2>Energie</h2>
 <div class="vent-grid" id="energie-grid"></div>
 
@@ -95,30 +106,30 @@
   <canvas id="verbraucher-chart"></canvas>
 </div>
 
-<h2>ComfoClime 24</h2>
-<div class="vent-grid" id="cool24-grid"></div>
+<h2>Anwesenheit</h2>
+<div class="vent-grid" id="presence-grid"></div>
 
-<h2>Verlauf ComfoClime</h2>
+<h2>Verlauf Anwesenheit</h2>
 <div class="chart-wrap">
-  <div class="range-btns" id="cool24-range">
+  <div class="range-btns" id="presence-range">
     <button data-r="6h">6h</button>
     <button data-r="24h" class="active">24h</button>
     <button data-r="7d">7d</button>
   </div>
-  <canvas id="cool24-chart"></canvas>
+  <canvas id="presence-chart"></canvas>
 </div>
 
 <h2>Lüftungsanlage</h2>
-<div class="vent-grid" id="vent-grid"></div>
+<div class="vent-grid" id="lueftung-grid"></div>
 
-<h2>Verlauf Lüftung</h2>
+<h2>Verlauf Lüftungsanlage</h2>
 <div class="chart-wrap">
-  <div class="range-btns" id="vent-range">
+  <div class="range-btns" id="lueftung-range">
     <button data-r="6h">6h</button>
     <button data-r="24h" class="active">24h</button>
     <button data-r="7d">7d</button>
   </div>
-  <canvas id="vent-chart"></canvas>
+  <canvas id="lueftung-chart"></canvas>
 </div>
 
 <h2>Vergleich</h2>
@@ -206,18 +217,21 @@ function _sortVerbraucher(fields) {
   });
 }
 
-const COOL24_TEMP_FIELDS = ['indoor_temp_c','outdoor_temp_c','tpma_temp_c','supply_temp_c','exhaust_temp_c'];
+const COOL24_TEMP_FIELDS = ['tpma_temp_c', 'supply_temp_c', 'set_point_temp_c'];
+const COOL24_POWER_FIELDS = ['power_w'];
 const COOL24_COLORS = {
-  indoor_temp_c: '#4f9cf9', outdoor_temp_c: '#22d3ee',
-  tpma_temp_c: '#f97316', supply_temp_c: '#4ade80', exhaust_temp_c: '#a855f7',
+  tpma_temp_c: '#f97316', supply_temp_c: '#4ade80',
+  set_point_temp_c: '#facc15',
+  power_w: '#a855f7',
 };
 const COOL24_LABELS = {
-  indoor_temp_c: 'Innenraum', outdoor_temp_c: 'Außen',
-  tpma_temp_c: 'Zuluft (vor WP)', supply_temp_c: 'Zuluft (nach WP)', exhaust_temp_c: 'Abluft',
+  tpma_temp_c: 'CC Zuluft (vor WP)', supply_temp_c: 'CC Zuluft (nach WP)',
+  set_point_temp_c: 'CC Solltemperatur',
+  power_w: 'CC Leistung',
 };
 
-let roomChart = null, ventChart = null, energieChart = null, verbraucherChart = null, cool24Chart = null, cmpChart = null;
-let roomRange = '24h', ventRange = '24h', energieRange = '24h', verbraucherRange = '24h', cool24Range = '24h', cmpRange = '24h';
+let roomChart = null, co2Chart = null, presenceChart = null, lueftungChart = null, energieChart = null, verbraucherChart = null, cmpChart = null;
+let roomRange = '24h', co2Range = '24h', presenceRange = '24h', lueftungRange = '24h', energieRange = '24h', verbraucherRange = '24h', cmpRange = '24h';
 
 const CMP_COLORS = [
   '#4f9cf9','#f97316','#4ade80','#f43f5e','#a855f7',
@@ -341,7 +355,9 @@ async function loadRoomsCurrent() {
     const t = v.temp !== null ? v.temp.toFixed(1) + ' °C' : '—';
     const h = v.hum  !== null ? v.hum.toFixed(0) + ' %' : '';
     const htg = v.heating === 1 ? ' <span style="color:var(--warm);font-size:.7rem;">● heiz</span>' : '';
-    grid.innerHTML += `<div class="card"><div class="room">${room}${htg}</div><div class="temp">${t}</div><div class="hum">${h}</div></div>`;
+    const co2 = (v.co2 !== null && v.co2 !== undefined && v.co2 > 0)
+      ? `<div class="co2">CO₂ ${Math.round(v.co2)} ppm</div>` : '';
+    grid.innerHTML += `<div class="card"><div class="room">${room}${htg}</div><div class="temp">${t}</div><div class="hum">${h}</div>${co2}</div>`;
   });
 }
 
@@ -368,6 +384,53 @@ async function loadRoomsHistory(range) {
       plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
       interaction: { mode: 'index', intersect: false },
     }
+  });
+}
+
+const _co2ThresholdPlugin = {
+  id: 'co2Thresholds',
+  afterDraw(chart) {
+    const y = chart.scales.y, x = chart.scales.x;
+    if (!y || !x) return;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1;
+    [[800, '#facc15'], [1000, '#f43f5e']].forEach(([ppm, color]) => {
+      const py = y.getPixelForValue(ppm);
+      if (py >= y.top && py <= y.bottom) {
+        ctx.strokeStyle = color;
+        ctx.beginPath(); ctx.moveTo(x.left, py); ctx.lineTo(x.right, py); ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+};
+
+async function loadCO2History(range) {
+  const data = await fetch(`/api/rooms/co2history?range=${range}`).then(r => r.json());
+  const ctx = document.getElementById('co2-chart').getContext('2d');
+  const entries = Object.entries(data).filter(([, pts]) => pts.length > 0);
+  const datasets = entries.map(([room, pts], i) => ({
+    label: room,
+    data: pts.map(p => ({x: p.t, y: p.v})),
+    borderColor: ROOM_COLORS[i % ROOM_COLORS.length],
+    backgroundColor: 'transparent',
+    borderWidth: 1.5, pointRadius: 0, tension: 0.3,
+  }));
+  if (co2Chart) co2Chart.destroy();
+  co2Chart = new Chart(ctx, {
+    type: 'line',
+    data: {datasets},
+    options: {
+      scales: {
+        x: timeXAxis(range),
+        y: { min: 300, ticks: { color: '#8892a4', callback: v => v + ' ppm' }, grid: { color: '#2a2d3a' } }
+      },
+      plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
+      interaction: { mode: 'index', intersect: false },
+    },
+    plugins: [_co2ThresholdPlugin],
   });
 }
 
@@ -455,43 +518,34 @@ async function loadVerbraucherHistory(range) {
   });
 }
 
-async function loadCool24Current() {
-  const data = await fetch('/api/comfoclime/current').then(r => r.json());
-  const grid = document.getElementById('cool24-grid');
-  const modeMap = {0: ['AUS', '#64748b'], 1: ['HEIZEN', '#f97316'], 2: ['KÜHLEN', '#22d3ee']};
-  const [modeLabel, modeColor] = data.mode !== null ? (modeMap[data.mode] || ['?', '#8892a4']) : ['—', '#8892a4'];
-  const items = [
-    {label: 'Modus', val: `<span style="color:${modeColor};font-weight:700">${modeLabel}</span>`, sub: data.set_point_temp_c !== null ? 'Soll: '+data.set_point_temp_c.toFixed(1)+' °C' : ''},
-    {label: 'Innenraum',       val: data.indoor_temp_c  !== null ? data.indoor_temp_c.toFixed(1)+' °C'  : '—', sub: ''},
-    {label: 'Außen',           val: data.outdoor_temp_c !== null ? data.outdoor_temp_c.toFixed(1)+' °C' : '—', sub: ''},
-    {label: 'Zuluft (vor WP)', val: data.tpma_temp_c    !== null ? data.tpma_temp_c.toFixed(1)+' °C'    : '—', sub: ''},
-    {label: 'Zuluft (nach WP)',val: data.supply_temp_c  !== null ? data.supply_temp_c.toFixed(1)+' °C'  : '—', sub: ''},
-    {label: 'Abluft',          val: data.exhaust_temp_c !== null ? data.exhaust_temp_c.toFixed(1)+' °C' : '—', sub: ''},
-    {label: 'Leistung',        val: data.power_w !== null ? _watt(data.power_w) : '—', sub: data.power_pct !== null ? data.power_pct.toFixed(0)+' %' : ''},
-  ];
-  grid.innerHTML = items.map(({label, val, sub}) =>
-    `<div class="vent-card"><div class="label">${label}</div><div class="val">${val}</div>${sub ? '<div class="sub">'+sub+'</div>' : ''}</div>`
-  ).join('');
+async function loadPresenceCurrent() {
+  const data = await fetch('/api/presence/current').then(r => r.json());
+  const grid = document.getElementById('presence-grid');
+  grid.innerHTML = Object.keys(data).sort().map(room => {
+    const on = data[room] !== null && data[room] !== undefined && data[room] > 0;
+    return `<div class="vent-card"><div class="label">${room}</div><div class="val" style="color:${on ? 'var(--green)' : 'var(--muted)'}">${on ? 'AKTIV' : '—'}</div></div>`;
+  }).join('');
 }
 
-async function loadCool24History(range) {
-  const data = await fetch(`/api/comfoclime/history?range=${range}`).then(r => r.json());
-  const ctx = document.getElementById('cool24-chart').getContext('2d');
-  const datasets = COOL24_TEMP_FIELDS.filter(f => data[f]?.length).map(f => ({
-    label: COOL24_LABELS[f],
-    data: data[f].map(p => ({x: p.t, y: p.v})),
-    borderColor: COOL24_COLORS[f],
+async function loadPresenceHistory(range) {
+  const data = await fetch(`/api/presence/history?range=${range}`).then(r => r.json());
+  const ctx = document.getElementById('presence-chart').getContext('2d');
+  const fields = Object.keys(data).filter(r => data[r]?.length).sort();
+  const datasets = fields.map((room, i) => ({
+    label: room,
+    data: data[room].map(p => ({x: p.t, y: p.v})),
+    borderColor: ROOM_COLORS[i % ROOM_COLORS.length],
     backgroundColor: 'transparent',
-    borderWidth: 2, pointRadius: 0, tension: 0.3,
+    borderWidth: 2, pointRadius: 0, tension: 0, stepped: true,
   }));
-  if (cool24Chart) cool24Chart.destroy();
-  cool24Chart = new Chart(ctx, {
+  if (presenceChart) presenceChart.destroy();
+  presenceChart = new Chart(ctx, {
     type: 'line',
     data: {datasets},
     options: {
       scales: {
         x: timeXAxis(range),
-        y: { ticks: { color: '#8892a4', callback: v => v + ' °C' }, grid: { color: '#2a2d3a' } }
+        y: { min: 0, max: 1, ticks: { color: '#8892a4', stepSize: 1, callback: v => v === 1 ? 'AKTIV' : '—' }, grid: { color: '#2a2d3a' } }
       },
       plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
       interaction: { mode: 'index', intersect: false },
@@ -499,36 +553,85 @@ async function loadCool24History(range) {
   });
 }
 
-async function loadVentCurrent() {
-  const data = await fetch('/api/ventilation/current').then(r => r.json());
-  const grid = document.getElementById('vent-grid');
+async function loadLueftungsanlageCurrent() {
+  const data = await fetch('/api/lueftungsanlage/current').then(r => r.json());
+  const q350   = data.q350   || {};
+  const cool24 = data.cool24 || {};
+  const grid = document.getElementById('lueftung-grid');
   grid.innerHTML = '';
+
+  // Q350 air stream cards
   ['aussenluft','zuluft','abluft','fortluft'].forEach(stream => {
-    const v = data[stream] || {};
-    const t = v.temp !== null && v.temp !== undefined ? v.temp.toFixed(1) + ' °C' : '—';
-    const h = v.hum  !== null && v.hum !== undefined  ? v.hum.toFixed(0) + ' %' : '';
+    const v = q350[stream] || {};
+    const t = (v.temp !== null && v.temp !== undefined) ? v.temp.toFixed(1) + ' °C' : '—';
+    const h = (v.hum  !== null && v.hum  !== undefined) ? v.hum.toFixed(0)  + ' %' : '';
     grid.innerHTML += `<div class="vent-card stream-${stream}"><div class="label">${VENT_LABELS[stream] || stream}</div><div class="val">${t}</div><div class="sub">${h}</div></div>`;
   });
+
+  // Cool24 heat pump cards
+  const modeMap = {0: ['AUS', '#64748b'], 1: ['HEIZEN', '#f97316'], 2: ['KÜHLEN', '#22d3ee']};
+  const [modeLabel, modeColor] = cool24.mode !== null && cool24.mode !== undefined
+    ? (modeMap[cool24.mode] || ['?', '#8892a4']) : ['—', '#8892a4'];
+  const cc_items = [
+    {label: 'WP Modus',           val: `<span style="color:${modeColor};font-weight:700">${modeLabel}</span>`, sub: ''},
+    {label: 'CC Zuluft (vor WP)', val: cool24.tpma_temp_c   !== null && cool24.tpma_temp_c   !== undefined ? cool24.tpma_temp_c.toFixed(1)   + ' °C' : '—', sub: ''},
+    {label: 'CC Zuluft (nach WP)',val: cool24.supply_temp_c !== null && cool24.supply_temp_c !== undefined ? cool24.supply_temp_c.toFixed(1) + ' °C' : '—', sub: ''},
+    {label: 'CC Solltemperatur',  val: cool24.set_point_temp_c !== null && cool24.set_point_temp_c !== undefined ? cool24.set_point_temp_c.toFixed(1) + ' °C' : '—', sub: ''},
+    {label: 'WP Leistung',        val: cool24.power_w !== null && cool24.power_w !== undefined ? _watt(cool24.power_w) : '—',
+                                  sub: cool24.power_pct !== null && cool24.power_pct !== undefined ? cool24.power_pct.toFixed(0) + ' %' : ''},
+    {label: 'Lüfterstufe',        val: cool24.fan_speed !== null && cool24.fan_speed !== undefined ? String(Math.round(cool24.fan_speed)) : '—', sub: ''},
+  ];
+  grid.innerHTML += cc_items.map(({label, val, sub}) =>
+    `<div class="vent-card"><div class="label">${label}</div><div class="val">${val}</div>${sub ? '<div class="sub">'+sub+'</div>' : ''}</div>`
+  ).join('');
 }
 
-async function loadVentHistory(range) {
-  const data = await fetch(`/api/ventilation/history?range=${range}`).then(r => r.json());
-  const ctx = document.getElementById('vent-chart').getContext('2d');
-  const datasets = Object.entries(data).map(([stream, pts]) => ({
-    label: VENT_LABELS[stream] || stream,
+async function loadLueftungsanlageHistory(range) {
+  const data = await fetch(`/api/lueftungsanlage/history?range=${range}`).then(r => r.json());
+  const q350   = data.q350   || {};
+  const cool24 = data.cool24 || {};
+  const ctx = document.getElementById('lueftung-chart').getContext('2d');
+
+  // Q350 temperature datasets
+  const q350Datasets = Object.entries(q350).map(([stream, pts]) => ({
+    label: `Q350 ${VENT_LABELS[stream] || stream}`,
     data: pts.map(p => ({x: p.t, y: p.v})),
     borderColor: VENT_COLORS[stream] || '#aaa',
     backgroundColor: 'transparent',
     borderWidth: 2, pointRadius: 0, tension: 0.3,
+    yAxisID: 'y',
   }));
-  if (ventChart) ventChart.destroy();
-  ventChart = new Chart(ctx, {
+
+  // Cool24 temperature datasets
+  const ccTempDatasets = COOL24_TEMP_FIELDS.filter(f => cool24[f]?.length).map(f => ({
+    label: COOL24_LABELS[f],
+    data: cool24[f].map(p => ({x: p.t, y: p.v})),
+    borderColor: COOL24_COLORS[f],
+    backgroundColor: 'transparent',
+    borderWidth: 2, pointRadius: 0, tension: 0.3,
+    yAxisID: 'y',
+  }));
+
+  // Cool24 power dataset on secondary Y axis
+  const ccPowerDatasets = COOL24_POWER_FIELDS.filter(f => cool24[f]?.length).map(f => ({
+    label: COOL24_LABELS[f],
+    data: cool24[f].map(p => ({x: p.t, y: p.v})),
+    borderColor: COOL24_COLORS[f],
+    backgroundColor: 'transparent',
+    borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [4, 2],
+    yAxisID: 'y1',
+  }));
+
+  const datasets = [...q350Datasets, ...ccTempDatasets, ...ccPowerDatasets];
+  if (lueftungChart) lueftungChart.destroy();
+  lueftungChart = new Chart(ctx, {
     type: 'line',
     data: {datasets},
     options: {
       scales: {
         x: timeXAxis(range),
-        y: { ticks: { color: '#8892a4', callback: v => v + ' °C' }, grid: { color: '#2a2d3a' } }
+        y:  { position: 'left',  ticks: { color: '#8892a4', callback: v => v + ' °C' }, grid: { color: '#2a2d3a' } },
+        y1: { position: 'right', ticks: { color: '#8892a4', callback: v => v + ' W'  }, grid: { drawOnChartArea: false } },
       },
       plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: {size: 11} } } },
       interaction: { mode: 'index', intersect: false },
@@ -563,32 +666,35 @@ function exportChart(fmt) {
   link.click();
 }
 
-setupRangeBtns('room-range',         r => { roomRange         = r; loadRoomsHistory(r); });
-setupRangeBtns('vent-range',         r => { ventRange         = r; loadVentHistory(r); });
-setupRangeBtns('energie-range',      r => { energieRange      = r; loadEnergieHistory(r); });
-setupRangeBtns('verbraucher-range',  r => { verbraucherRange  = r; loadVerbraucherHistory(r); });
-setupRangeBtns('cool24-range',       r => { cool24Range       = r; loadCool24History(r); });
-setupRangeBtns('cmp-range',          r => { cmpRange          = r; loadCompare(r); });
+setupRangeBtns('room-range',        r => { roomRange        = r; loadRoomsHistory(r); });
+setupRangeBtns('co2-range',         r => { co2Range         = r; loadCO2History(r); });
+setupRangeBtns('presence-range',    r => { presenceRange    = r; loadPresenceHistory(r); });
+setupRangeBtns('lueftung-range',    r => { lueftungRange    = r; loadLueftungsanlageHistory(r); });
+setupRangeBtns('energie-range',     r => { energieRange     = r; loadEnergieHistory(r); });
+setupRangeBtns('verbraucher-range', r => { verbraucherRange = r; loadVerbraucherHistory(r); });
+setupRangeBtns('cmp-range',         r => { cmpRange         = r; loadCompare(r); });
 
 async function refresh() {
-  await Promise.all([loadRoomsCurrent(), loadVentCurrent(), loadEnergieCurrent(), loadVerbraucherCurrent(), loadCool24Current()]);
+  await Promise.all([loadRoomsCurrent(), loadPresenceCurrent(), loadLueftungsanlageCurrent(), loadEnergieCurrent(), loadVerbraucherCurrent()]);
   document.getElementById('updated').textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
 }
 
 refresh();
 loadRoomsHistory(roomRange);
+loadCO2History(co2Range);
+loadPresenceHistory(presenceRange);
 loadEnergieHistory(energieRange);
 loadVerbraucherHistory(verbraucherRange);
-loadCool24History(cool24Range);
-loadVentHistory(ventRange);
+loadLueftungsanlageHistory(lueftungRange);
 loadSeriesMeta();
 setInterval(() => {
   refresh();
   loadRoomsHistory(roomRange);
+  loadCO2History(co2Range);
+  loadPresenceHistory(presenceRange);
   loadEnergieHistory(energieRange);
   loadVerbraucherHistory(verbraucherRange);
-  loadCool24History(cool24Range);
-  loadVentHistory(ventRange);
+  loadLueftungsanlageHistory(lueftungRange);
   loadCompare(cmpRange);
 }, 60000);
 </script>

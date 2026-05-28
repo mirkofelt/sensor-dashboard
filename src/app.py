@@ -103,13 +103,19 @@ async def index(request: Request):
 
 @app.get("/api/rooms/current")
 async def rooms_current():
-    """Current temperature, humidity, and heating status for all rooms."""
+    """Current temperature, humidity, heating status, and CO2 for all rooms."""
     temps   = _last_by_tag("raumtemperatur", "raum", "temp")
     hums    = _last_by_tag("raumtemperatur", "raum", "hum")
     heating = _last_by_tag("raumtemperatur", "raum", "heating")
+    co2     = _last_by_tag("raumtemperatur", "raum", "co2")
     all_rooms = sorted(set(temps) | set(hums))
     return JSONResponse({
-        r: {"temp": temps.get(r), "hum": hums.get(r), "heating": heating.get(r)}
+        r: {
+            "temp": temps.get(r),
+            "hum": hums.get(r),
+            "heating": heating.get(r),
+            "co2": co2.get(r),
+        }
         for r in all_rooms
     })
 
@@ -120,40 +126,53 @@ async def rooms_history(range: str = "24h"):
     return JSONResponse(_history_by_tag("raumtemperatur", "raum", "temp", range))
 
 
-@app.get("/api/ventilation/current")
-async def ventilation_current():
-    """Current temperature and humidity for all ventilation air streams."""
-    temps = _last_by_tag("lueftung", "luftstrom", "temp")
-    hums  = _last_by_tag("lueftung", "luftstrom", "hum")
-    all_streams = sorted(set(temps) | set(hums))
-    return JSONResponse({s: {"temp": temps.get(s), "hum": hums.get(s)} for s in all_streams})
+@app.get("/api/rooms/co2history")
+async def rooms_co2history(range: str = "24h"):
+    """CO2 history for rooms with CO2 sensors. range: 6h | 24h | 7d"""
+    return JSONResponse(_history_by_tag("raumtemperatur", "raum", "co2", range))
 
 
-@app.get("/api/ventilation/history")
-async def ventilation_history(range: str = "24h"):
-    """Temperature history for all ventilation air streams. range: 6h | 24h | 7d"""
-    return JSONResponse(_history_by_tag("lueftung", "luftstrom", "temp", range))
+
+@app.get("/api/lueftungsanlage/current")
+async def lueftungsanlage_current():
+    """Combined current data: Q350 air streams + Cool24 heat pump status."""
+    # Q350 air streams
+    vent_temps = _last_by_tag("lueftung", "luftstrom", "temp")
+    vent_hums  = _last_by_tag("lueftung", "luftstrom", "hum")
+    streams = sorted(set(vent_temps) | set(vent_hums))
+    q350 = {s: {"temp": vent_temps.get(s), "hum": vent_hums.get(s)} for s in streams}
+
+    # Cool24 heat pump
+    cool24 = {f: _last_field("comfoclime", f) for f in _COMFOCLIME_FIELDS}
+
+    return JSONResponse({"q350": q350, "cool24": cool24})
 
 
-_TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom", "energie": None, "verbraucher": None, "comfoclime": None}
+@app.get("/api/lueftungsanlage/history")
+async def lueftungsanlage_history(range: str = "24h"):
+    """Combined temperature history: Q350 air streams + Cool24 heat pump temps."""
+    q350 = _history_by_tag("lueftung", "luftstrom", "temp", range)
+    cool24 = {f: _history_field("comfoclime", f, range) for f in _COMFOCLIME_HISTORY_FIELDS}
+    return JSONResponse({"q350": q350, "cool24": cool24})
+
+
+_TAG_KEY = {"raumtemperatur": "raum", "lueftung": "luftstrom", "energie": None, "verbraucher": None, "comfoclime": None, "presence": "room"}
 _VENT_LABELS = {"aussenluft": "Außenluft", "abluft": "Abluft", "fortluft": "Fortluft", "zuluft": "Zuluft"}
 _FIELD_LABELS = {"temp": "Temp", "hum": "Feuchte"}
-_FIELD_UNITS  = {"temp": "°C", "hum": "%"}
+_FIELD_UNITS  = {"temp": "°C", "hum": "%", "co2": "ppm"}
 
 _COMFOCLIME_FIELDS = [
     "mode", "heat_pump_status",
-    "indoor_temp_c", "outdoor_temp_c", "set_point_temp_c",
-    "tpma_temp_c", "supply_temp_c", "exhaust_temp_c",
+    "tpma_temp_c", "supply_temp_c", "set_point_temp_c",
     "supply_coil_temp_c", "exhaust_coil_temp_c",
     "power_pct", "power_w", "fan_speed",
+    "supply_air_flow", "exhaust_air_flow",
 ]
-_COMFOCLIME_HISTORY_FIELDS = ["indoor_temp_c", "outdoor_temp_c", "tpma_temp_c", "supply_temp_c", "exhaust_temp_c"]
+_COMFOCLIME_HISTORY_FIELDS = ["tpma_temp_c", "supply_temp_c", "set_point_temp_c", "power_w"]
 _COMFOCLIME_SERIES = {
-    "indoor_temp_c": ("CC Innenraum", "°C"),
-    "outdoor_temp_c": ("CC Außen", "°C"),
     "tpma_temp_c": ("CC Zuluft (vor WP)", "°C"),
     "supply_temp_c": ("CC Zuluft (nach WP)", "°C"),
-    "exhaust_temp_c": ("CC Abluft", "°C"),
+    "set_point_temp_c": ("CC Solltemperatur", "°C"),
     "power_w": ("CC Leistung", "W"),
 }
 
@@ -277,25 +296,28 @@ async def verbraucher_history(range: str = "24h"):
     return JSONResponse({k: v for k, v in _history_all_fields("verbraucher", range).items() if _is_valid_verbraucher_field(k)})
 
 
-@app.get("/api/comfoclime/current")
-async def comfoclime_current():
-    """Current ComfoClime 24 heat pump values."""
-    return JSONResponse({f: _last_field("comfoclime", f) for f in _COMFOCLIME_FIELDS})
+@app.get("/api/presence/current")
+async def presence_current():
+    """Current presence (active/inactive) for all rooms."""
+    return JSONResponse(_last_by_tag("presence", "room", "active"))
 
 
-@app.get("/api/comfoclime/history")
-async def comfoclime_history(range: str = "24h"):
-    """Temperature history for ComfoClime 24. range: 6h | 24h | 7d"""
-    return JSONResponse({f: _history_field("comfoclime", f, range) for f in _COMFOCLIME_HISTORY_FIELDS})
+@app.get("/api/presence/history")
+async def presence_history(range: str = "24h"):
+    """Presence history per room. range: 6h | 24h | 7d"""
+    return JSONResponse(_history_by_tag("presence", "room", "active", range))
+
 
 
 @app.get("/api/series")
 async def list_series():
     """Return all available series with id, label, unit, and group."""
-    vent_t = _last_by_tag("lueftung", "luftstrom", "temp")
-    vent_h = _last_by_tag("lueftung", "luftstrom", "hum")
-    room_t = _last_by_tag("raumtemperatur", "raum", "temp")
-    room_h = _last_by_tag("raumtemperatur", "raum", "hum")
+    vent_t        = _last_by_tag("lueftung", "luftstrom", "temp")
+    vent_h        = _last_by_tag("lueftung", "luftstrom", "hum")
+    room_t        = _last_by_tag("raumtemperatur", "raum", "temp")
+    room_h        = _last_by_tag("raumtemperatur", "raum", "hum")
+    room_co2      = _last_by_tag("raumtemperatur", "raum", "co2")
+    presence_rooms = _last_by_tag("presence", "room", "active")
 
     _ENERGIE_LABELS = {
         "pv_w": "PV Erzeugung", "verbrauch_w": "Verbrauch", "bezug_w": "Netzbezug",
@@ -313,18 +335,18 @@ async def list_series():
         series.append({"id": f"energie::{field}", "label": lbl, "unit": _ENERGIE_UNITS[field], "group": "Energie"})
     for field in verbraucher_fields:
         series.append({"id": f"verbraucher::{field}", "label": _verbraucher_label(field), "unit": "", "group": "Verbraucher"})
-    for field, (lbl, unit) in _COMFOCLIME_SERIES.items():
-        series.append({"id": f"comfoclime::{field}", "label": lbl, "unit": unit, "group": "ComfoClime 24"})
     for stream in sorted(set(vent_t) | set(vent_h)):
         lbl = _VENT_LABELS.get(stream, stream.capitalize())
         for field in ("temp", "hum"):
             if (field == "temp" and stream in vent_t) or (field == "hum" and stream in vent_h):
                 series.append({
                     "id": f"lueftung:{stream}:{field}",
-                    "label": f"{lbl} ({_FIELD_LABELS[field]})",
+                    "label": f"Q350 {lbl} ({_FIELD_LABELS[field]})",
                     "unit": _FIELD_UNITS[field],
-                    "group": "Lüftung",
+                    "group": "Lüftungsanlage",
                 })
+    for field, (lbl, unit) in _COMFOCLIME_SERIES.items():
+        series.append({"id": f"comfoclime::{field}", "label": lbl, "unit": unit, "group": "Lüftungsanlage"})
     for room in sorted(set(room_t) | set(room_h)):
         for field in ("temp", "hum"):
             if (field == "temp" and room in room_t) or (field == "hum" and room in room_h):
@@ -334,6 +356,21 @@ async def list_series():
                     "unit": _FIELD_UNITS[field],
                     "group": "Räume",
                 })
+    for room in sorted(set(room_co2)):
+        if room_co2.get(room) is not None:
+            series.append({
+                "id": f"raumtemperatur:{room}:co2",
+                "label": f"{room} (CO₂)",
+                "unit": "ppm",
+                "group": "Räume",
+            })
+    for room in sorted(set(presence_rooms)):
+        series.append({
+            "id": f"presence:{room}:active",
+            "label": f"{room} (Anwesenheit)",
+            "unit": "",
+            "group": "Anwesenheit",
+        })
     return JSONResponse(series)
 
 
@@ -368,7 +405,7 @@ async def compare(series: str = Query(default=""), range: str = "24h"):
 '''
         rows = _flux_query(query)
         data = [{"t": r["_time"], "v": v} for r in rows if (v := _safe_float(r.get("_value"))) is not None and r.get("_time")]
-        unit = "°C" if field.endswith("_temp_c") else _FIELD_UNITS.get(field, "W")
+        unit = "°C" if field.endswith("_temp_c") else _FIELD_UNITS.get(field, "")
         result.append({"id": s, "unit": unit, "data": data})
 
     return JSONResponse(result)
